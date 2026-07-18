@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
+    System,
     User,
     Assistant,
 }
@@ -11,6 +12,8 @@ pub enum Role {
 pub struct Message {
     pub role: Role,
     pub content: String,
+    #[serde(default, skip_serializing)]
+    pub created_at: i64,
 }
 
 impl Message {
@@ -18,6 +21,7 @@ impl Message {
         Self {
             role,
             content: content.into(),
+            created_at: chrono::Utc::now().timestamp(),
         }
     }
 }
@@ -37,6 +41,7 @@ pub(crate) struct ChatRequest<'a> {
     pub model: &'a str,
     pub messages: &'a [Message],
     pub stream: bool,
+    pub think: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,6 +57,29 @@ pub(crate) struct ChatChunk {
 pub(crate) struct ChatResponseMessage {
     pub role: String,
     pub content: String,
+    #[serde(default)]
+    pub thinking: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct EmbedRequest<'a> {
+    pub model: &'a str,
+    pub input: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct EmbedResponse {
+    pub embeddings: Vec<Vec<f32>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RunningModelsResponse {
+    pub models: Vec<RunningModel>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct RunningModel {
+    pub name: String,
 }
 
 impl ChatChunk {
@@ -79,6 +107,16 @@ mod tests {
         .unwrap();
         assert_eq!(chunk.message.unwrap().content, "hello");
         assert!(!chunk.done);
+    }
+
+    #[test]
+    fn parses_thinking_chunk() {
+        let chunk = ChatChunk::from_line(
+            r#"{"message":{"role":"assistant","content":"","thinking":"checking"},"done":false}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(chunk.message.unwrap().thinking, "checking");
     }
 
     #[test]

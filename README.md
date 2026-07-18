@@ -8,6 +8,11 @@ DeskPilot is a private, local-first desktop assistant powered by Ollama. It prov
 - Streams responses without blocking the interface
 - Preserves conversation context between messages
 - Cancels active generations immediately
+- Tracks assistant and user-created tasks
+- Stores durable memories in local SQLite
+- Creates vector embeddings for semantic memory retrieval
+- Provides an in-app diagnostic log viewer
+- Enforces one application instance and focuses the existing window on relaunch
 - Keeps requests on the local Ollama runtime
 
 ## Requirements
@@ -15,6 +20,11 @@ DeskPilot is a private, local-first desktop assistant powered by Ollama. It prov
 - Rust stable toolchain
 - Ollama running at `http://127.0.0.1:11434`
 - At least one locally installed Ollama model
+- `qwen3-embedding:0.6b` for semantic memory (recent-memory fallback is automatic)
+
+## Local data
+
+DeskPilot stores its SQLite database at `%LOCALAPPDATA%\DeskPilot\deskpilot.db`. The database contains conversations, tasks, memories, embedding vectors, settings, and diagnostic logs. Nothing is uploaded by DeskPilot.
 
 ## Run
 

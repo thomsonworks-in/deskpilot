@@ -5,16 +5,23 @@ use futures_util::StreamExt;
 use reqwest::Client;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::message::{ChatChunk, ChatRequest, Message, OllamaTagsResponse};
+use crate::message::{
+    ChatChunk, ChatRequest, EmbedRequest, EmbedResponse, Message, OllamaTagsResponse,
+    RunningModelsResponse,
+};
 
 #[derive(Debug)]
 pub enum StreamEvent {
     Started,
     ContentDelta(String),
+    ThinkingDelta(String),
+    ModelLoading(String),
     Finished,
     Cancelled,
     Error(String),
     ModelsLoaded(Vec<String>),
+    EmbeddingReady { memory_id: u64, embedding: Vec<f32> },
+    Notice(String),
 }
 
 #[derive(Clone)]
@@ -52,6 +59,45 @@ impl OllamaClient {
         Ok(body.models.into_iter().map(|model| model.name).collect())
     }
 
+    pub async fn embed(&self, model: &str, input: &str) -> Result<Vec<f32>> {
+        let response = self
+            .http
+            .post(format!("{}/api/embed", self.base_url))
+            .json(&EmbedRequest { model, input })
+            .send()
+            .await
+            .context("could not request an embedding")?
+            .error_for_status()
+            .context("Ollama embedding request failed")?;
+        let body: EmbedResponse = response
+            .json()
+            .await
+            .context("invalid Ollama embedding response")?;
+        body.embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("Ollama returned no embedding"))
+    }
+
+    pub async fn is_model_loaded(&self, model: &str) -> Result<bool> {
+        let response = self
+            .http
+            .get(format!("{}/api/ps", self.base_url))
+            .send()
+            .await
+            .context("could not query loaded Ollama models")?
+            .error_for_status()
+            .context("Ollama loaded-model request failed")?;
+        let body: RunningModelsResponse = response
+            .json()
+            .await
+            .context("invalid Ollama loaded-model response")?;
+        Ok(body
+            .models
+            .iter()
+            .any(|running| running.name == model || running.name.starts_with(&format!("{model}:"))))
+    }
+
     pub async fn stream_chat(
         &self,
         model: &str,
@@ -63,6 +109,7 @@ impl OllamaClient {
             model,
             messages,
             stream: true,
+            think: true,
         };
         let response = self
             .http
@@ -131,6 +178,9 @@ fn process_line(
         return Err(anyhow!("Ollama error: {error}"));
     }
     if let Some(message) = chunk.message {
+        if !message.thinking.is_empty() {
+            let _ = events.send(StreamEvent::ThinkingDelta(message.thinking));
+        }
         if message.role == "assistant" && !message.content.is_empty() {
             *received_content = true;
             let _ = events.send(StreamEvent::ContentDelta(message.content));

@@ -10,4 +10,6 @@
 
 Model discovery follows the same channel: a startup task calls `GET /api/tags` and sends `ModelsLoaded` or `Error`.
 
+Before chat begins, DeskPilot embeds the prompt with the local `qwen3-embedding:0.6b` model and ranks stored memory vectors using cosine similarity. The most relevant memories and open tasks are added to the system context. New memories are embedded asynchronously and stored in SQLite. If embeddings are unavailable, DeskPilot falls back to recent memories and records the reason in Logs.
+
 No network operation runs on the egui thread.
