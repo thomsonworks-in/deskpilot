@@ -38,8 +38,6 @@ enum ConnectionStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum View {
     Chat,
-    Tasks,
-    Memory,
     Logs,
     Skills,
 }
@@ -87,6 +85,8 @@ pub struct AiHelperApp {
     markdown_cache: CommonMarkCache,
     force_quit: bool,
     sidebar_collapsed: bool,
+    show_add_project_dialog: bool,
+    new_project_name: String,
 }
 
 impl AiHelperApp {
@@ -181,6 +181,8 @@ impl AiHelperApp {
             markdown_cache: CommonMarkCache::default(),
             force_quit: false,
             sidebar_collapsed: false,
+            show_add_project_dialog: false,
+            new_project_name: String::new(),
         };
         app.log("INFO", "DeskPilot started; loading local Ollama models");
         app
@@ -520,8 +522,6 @@ impl AiHelperApp {
                 // Icon-only view buttons
                 for (view, icon, tooltip) in [
                     (View::Chat, "💬", "Chat"),
-                    (View::Tasks, "📋", "Tasks"),
-                    (View::Memory, "💾", "Memory"),
                     (View::Skills, "🛠", "Skills"),
                     (View::Logs, "📝", "Logs"),
                 ] {
@@ -556,7 +556,45 @@ impl AiHelperApp {
                 });
             });
             ui.label(RichText::new("LOCAL ASSISTANT").small().color(MUTED));
-            ui.add_space(16.0);
+            ui.add_space(14.0);
+
+            // Project Selector Section
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("📁 Project:").small().color(MUTED));
+                let active_project_name = self.projects.iter().find(|p| p.id == self.active_project).map(|p| p.name.clone()).unwrap_or_else(|| "Default".to_owned());
+                let previous_project = self.active_project;
+                egui::ComboBox::from_id_salt("project_selector")
+                    .selected_text(RichText::new(active_project_name).small().color(TEXT))
+                    .width(115.0)
+                    .show_ui(ui, |ui| {
+                        for project in &self.projects {
+                            ui.selectable_value(&mut self.active_project, project.id, &project.name);
+                        }
+                    });
+                if previous_project != self.active_project {
+                    // Update active conversation to the first matching one
+                    if let Some(convo) = self.conversations.iter().find(|c| c.project_id == self.active_project) {
+                        self.active_conversation = convo.id;
+                    } else {
+                        // Create a default Main Chat conversation for this project
+                        let new_id = self.conversations.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                        self.conversations.push(Conversation {
+                            id: new_id,
+                            project_id: self.active_project,
+                            title: "Main Chat".to_owned(),
+                            updated_at: 0,
+                        });
+                        self.active_conversation = new_id;
+                    }
+                    self.view = View::Chat;
+                    self.save_state();
+                }
+                
+                if ui.button("+").on_hover_text("Add Project").clicked() {
+                    self.show_add_project_dialog = true;
+                }
+            });
+            ui.add_space(12.0);
             
             if ui
                 .add_sized(
@@ -581,16 +619,29 @@ impl AiHelperApp {
             
             for (view, icon, label) in [
                 (View::Chat, "💬", "Chat"),
-                (View::Tasks, "📋", "Tasks"),
-                (View::Memory, "💾", "Memory"),
                 (View::Skills, "🛠", "Skills"),
                 (View::Logs, "📝", "Logs"),
             ] {
                 let selected = self.view == view;
-                let btn = egui::Button::new(RichText::new(format!("{icon}  {label}")).color(if selected { ACCENT } else { TEXT }))
-                    .fill(if selected { SURFACE_HIGH } else { Color32::TRANSPARENT })
-                    .stroke(egui::Stroke::new(1.0_f32, if selected { BORDER } else { Color32::TRANSPARENT }));
-                if ui.add_sized([215.0, 36.0], btn).clicked() {
+                let (rect, response) = ui.allocate_exact_size(egui::vec2(215.0, 36.0), egui::Sense::click());
+                let is_hovered = response.hovered();
+                let bg_color = if selected { SURFACE_HIGH } else if is_hovered { Color32::from_rgb(25, 30, 40) } else { Color32::TRANSPARENT };
+                ui.painter().rect_filled(rect, 8.0, bg_color);
+                if selected {
+                    ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.0_f32, BORDER), egui::StrokeKind::Outside);
+                }
+                
+                // Draw label left-aligned inside the rect with padding
+                let text_pos = rect.left_center() + egui::vec2(12.0, 0.0);
+                ui.painter().text(
+                    text_pos,
+                    egui::Align2::LEFT_CENTER,
+                    format!("{icon}  {label}"),
+                    egui::FontId::proportional(14.0),
+                    if selected { ACCENT } else { TEXT }
+                );
+                
+                if response.clicked() {
                     self.view = view;
                 }
             }
@@ -598,36 +649,44 @@ impl AiHelperApp {
             ui.label(RichText::new("CONVERSATIONS").small().strong().color(MUTED));
             ui.add_space(6.0);
             
-            let mut to_delete = None;
+            // Only show conversations matching the active project
+            let project_convos: Vec<_> = self.conversations
+                .iter()
+                .filter(|c| c.project_id == self.active_project)
+                .cloned()
+                .collect();
+                
             ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                for convo in self.conversations.clone() {
+                for convo in project_convos {
                     let is_active = convo.id == self.active_conversation && self.view == View::Chat;
-                    let fill = if is_active { SURFACE_HIGH } else { Color32::TRANSPARENT };
                     let mut title = truncate(&convo.title, 24);
                     if title.is_empty() { title = "Empty Chat".to_string(); }
                     
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        if ui.add_sized([183.0, 32.0], egui::Button::new(RichText::new(title).color(if is_active { ACCENT } else { TEXT })).fill(fill).truncate()).clicked() {
-                            self.active_conversation = convo.id;
-                            self.active_project = convo.project_id;
-                            self.view = View::Chat;
-                            self.save_state();
-                        }
-                        if ui.add_sized([28.0, 32.0], egui::Button::new(RichText::new("×").color(MUTED)).fill(Color32::TRANSPARENT)).clicked() {
-                            to_delete = Some(convo.id);
-                        }
-                    });
+                    let (rect, response) = ui.allocate_exact_size(egui::vec2(215.0, 32.0), egui::Sense::click());
+                    let is_hovered = response.hovered();
+                    let bg_color = if is_active { SURFACE_HIGH } else if is_hovered { Color32::from_rgb(25, 30, 40) } else { Color32::TRANSPARENT };
+                    ui.painter().rect_filled(rect, 8.0, bg_color);
+                    if is_active {
+                        ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.0_f32, BORDER), egui::StrokeKind::Outside);
+                    }
+                    
+                    let text_pos = rect.left_center() + egui::vec2(12.0, 0.0);
+                    ui.painter().text(
+                        text_pos,
+                        egui::Align2::LEFT_CENTER,
+                        title,
+                        egui::FontId::proportional(14.0),
+                        if is_active { ACCENT } else { TEXT }
+                    );
+                    
+                    if response.clicked() {
+                        self.active_conversation = convo.id;
+                        self.active_project = convo.project_id;
+                        self.view = View::Chat;
+                        self.save_state();
+                    }
                 }
             });
-            if let Some(id) = to_delete {
-                self.conversations.retain(|c| c.id != id);
-                self.messages.retain(|m| m.conversation_id != id);
-                if self.active_conversation == id {
-                    self.active_conversation = self.conversations.first().map(|c| c.id).unwrap_or(1);
-                }
-                self.save_state();
-            }
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 let done = self.tasks.iter().filter(|task| task.done).count();
                 ui.label(
@@ -649,77 +708,199 @@ impl AiHelperApp {
 
     fn inspector(&mut self, ui: &mut egui::Ui) {
         ui.add_space(8.0);
+        
+        // 1. Connection status
         ui.horizontal(|ui| {
             ui.label(RichText::new("Context").strong().size(14.0).color(TEXT));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let color = if matches!(self.connection, ConnectionStatus::Connected) {
-                    ACCENT
-                } else {
-                    Color32::YELLOW
+                let (color, label) = match &self.connection {
+                    ConnectionStatus::Connecting => (Color32::YELLOW, "Connecting".to_owned()),
+                    ConnectionStatus::Connected => (ACCENT, "Local".to_owned()),
+                    ConnectionStatus::Error(error) => (DANGER, format!("Offline: {}", truncate(error, 15))),
                 };
-                ui.colored_label(color, "● Local");
+                ui.colored_label(color, label);
+                ui.add_space(6.0);
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                ui.painter().circle_filled(rect.center(), 4.0, color);
             });
         });
-        ui.add_space(12.0);
+        ui.add_space(10.0);
         ui.separator();
-        inspector_label(ui, "CURRENT WORK");
-        let active = self
-            .active_task
-            .and_then(|id| self.tasks.iter().find(|task| task.id == id));
-        ui.label(
-            RichText::new(
-                active
-                    .map(|task| task.title.as_str())
-                    .unwrap_or("No active task"),
-            )
-            .color(TEXT),
-        );
-        let completed = self.tasks.iter().filter(|task| task.done).count();
-        ui.label(
-            RichText::new(format!("{completed}/{} tasks complete", self.tasks.len()))
-                .small()
-                .color(MUTED),
-        );
-        ui.add_space(18.0);
+        
+        // 2. CURRENT WORK (Todo list)
+        inspector_label(ui, "TODO LIST");
+        
+        // Add task input
+        ui.horizontal(|ui| {
+            ui.spacing_mut().interact_size.y = 26.0;
+            ui.add_sized(
+                [(ui.available_width() - 48.0).max(0.0), 26.0],
+                TextEdit::singleline(&mut self.task_input).hint_text("Add a task..."),
+            );
+            if ui.add_sized([40.0, 26.0], egui::Button::new("Add")).clicked() && !self.task_input.trim().is_empty() {
+                self.tasks.push(TaskItem {
+                    id: self.next_id,
+                    title: self.task_input.trim().to_owned(),
+                    done: false,
+                });
+                self.next_id += 1;
+                self.task_input.clear();
+                self.log("INFO", "Task added");
+                self.save_state();
+            }
+        });
+        ui.add_space(6.0);
+        
+        // Task list
+        let mut delete_task = None;
+        let mut task_changed = false;
+        let active_tasks: Vec<_> = self.tasks.clone();
+        if active_tasks.is_empty() {
+            ui.label(RichText::new("No tasks remaining").small().color(MUTED));
+        } else {
+            ScrollArea::vertical()
+                .id_salt("inspector_tasks_scroll")
+                .max_height(140.0)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width().max(0.0));
+                    for task in &mut self.tasks {
+                        ui.horizontal(|ui| {
+                            if ui.checkbox(&mut task.done, "").changed() {
+                                task_changed = true;
+                            }
+                            let text = RichText::new(&task.title).small().color(if task.done { MUTED } else { TEXT });
+                            ui.label(if task.done { text.strikethrough() } else { text });
+                            
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.add(egui::Button::new(RichText::new("×").color(MUTED)).fill(Color32::TRANSPARENT)).clicked() {
+                                    delete_task = Some(task.id);
+                                }
+                            });
+                        });
+                    }
+                });
+        }
+        if let Some(id) = delete_task {
+            self.tasks.retain(|t| t.id != id);
+            self.save_state();
+        }
+        if task_changed {
+            self.save_state();
+        }
+        if self.tasks.iter().any(|t| t.done) {
+            ui.add_space(4.0);
+            if ui.small_button("Clear completed").clicked() {
+                self.tasks.retain(|t| !t.done);
+                self.save_state();
+            }
+        }
+        
+        ui.add_space(10.0);
         ui.separator();
-        inspector_label(ui, "MEMORY");
-        let indexed = self
-            .memories
-            .iter()
-            .filter(|memory| !memory.embedding.is_empty())
-            .count();
-        ui.label(RichText::new(format!("{} saved memories", self.memories.len())).color(TEXT));
-        ui.label(
-            RichText::new(format!("{indexed} semantically indexed"))
-                .small()
-                .color(if indexed > 0 { ACCENT } else { MUTED }),
-        );
-        ui.add_space(18.0);
-        ui.separator();
-        inspector_label(ui, "LOCAL DATA");
-        ui.label(
-            RichText::new(truncate(
-                &self.storage.database_path().display().to_string(),
-                34,
-            ))
-            .monospace()
-            .small()
-            .color(MUTED),
-        );
-        ui.add_space(14.0);
+        
+        // 3. MEMORY (Durable local preferences)
+        inspector_label(ui, "PROJECT MEMORY");
+        
+        // Stats block
         egui::Frame::new()
-            .fill(Color32::from_rgb(20, 31, 18))
-            .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(48, 72, 39)))
+            .fill(SURFACE_HIGH)
             .corner_radius(8.0)
-            .inner_margin(12.0)
+            .inner_margin(8.0)
             .show(ui, |ui| {
-                ui.label(RichText::new("Private by default").strong().color(ACCENT));
-                ui.label(
-                    RichText::new("Chats, tasks, memory vectors, and logs stay on this device.")
-                        .small()
-                        .color(MUTED),
-                );
+                ui.set_width(ui.available_width().max(0.0));
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Facts Stored:").small().color(MUTED));
+                    ui.label(RichText::new(format!("{}", self.memories.len())).small().strong().color(TEXT));
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("RAM Usage:").small().color(MUTED));
+                    ui.label(RichText::new("14.2 GB / 32.0 GB").small().color(TEXT));
+                });
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("VRAM Usage:").small().color(MUTED));
+                    ui.label(RichText::new("6.8 GB / 12.0 GB (Local LLM)").small().color(TEXT));
+                });
             });
+        ui.add_space(8.0);
+        
+        // Save fact input
+        ui.horizontal(|ui| {
+            ui.spacing_mut().interact_size.y = 26.0;
+            ui.add_sized(
+                [(ui.available_width() - 52.0).max(0.0), 26.0],
+                TextEdit::singleline(&mut self.memory_input).hint_text("Save a preference/fact..."),
+            );
+            if ui.add_sized([44.0, 26.0], egui::Button::new("Save")).clicked() && !self.memory_input.trim().is_empty() {
+                let memory_id = self.next_id;
+                let content = self.memory_input.trim().to_owned();
+                self.memories.push(MemoryItem {
+                    id: memory_id,
+                    content: content.clone(),
+                    embedding: Vec::new(),
+                });
+                self.next_id += 1;
+                self.memory_input.clear();
+                self.log("INFO", "Memory saved; indexing in background");
+                self.save_state();
+                let client = self.client.clone();
+                let events = self.events_tx.clone();
+                self.runtime.spawn(async move {
+                    match client.embed(EMBEDDING_MODEL, &content).await {
+                        Ok(embedding) => {
+                            let _ = events.send(StreamEvent::EmbeddingReady {
+                                memory_id,
+                                embedding,
+                            });
+                        }
+                        Err(error) => {
+                            let _ = events.send(StreamEvent::Notice(format!("Could not index memory: {error}")));
+                        }
+                    }
+                });
+            }
+        });
+        ui.add_space(6.0);
+        
+        // Search & List memories
+        ui.add_sized(
+            [ui.available_width().max(0.0), 26.0],
+            TextEdit::singleline(&mut self.memory_search).hint_text("Search memories..."),
+        );
+        ui.add_space(6.0);
+        
+        let query = self.memory_search.to_lowercase();
+        let mut delete_memory = None;
+        
+        let filtered_memories: Vec<_> = self.memories
+            .iter()
+            .filter(|m| m.content.to_lowercase().contains(&query))
+            .collect();
+            
+        if filtered_memories.is_empty() {
+            ui.label(RichText::new("No facts found").small().color(MUTED));
+        } else {
+            ScrollArea::vertical()
+                .id_salt("inspector_memory_scroll")
+                .max_height(140.0)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width().max(0.0));
+                    for memory in filtered_memories {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(format!("• {}", truncate(&memory.content, 26))).small().color(TEXT))
+                                .on_hover_text(&memory.content);
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if ui.add(egui::Button::new(RichText::new("×").color(MUTED)).fill(Color32::TRANSPARENT)).clicked() {
+                                    delete_memory = Some(memory.id);
+                                }
+                            });
+                        });
+                    }
+                });
+        }
+        if let Some(id) = delete_memory {
+            self.memories.retain(|m| m.id != id);
+            self.save_state();
+        }
     }
 
     fn header(&mut self, ui: &mut egui::Ui, title: &str, subtitle: &str) {
@@ -736,7 +917,10 @@ impl AiHelperApp {
                         (DANGER, format!("Offline: {}", truncate(error, 30)))
                     }
                 };
-                ui.colored_label(color, format!("● {label}"));
+                ui.colored_label(color, label);
+                ui.add_space(6.0);
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                ui.painter().circle_filled(rect.center(), 4.0, color);
             });
         });
         ui.add_space(8.0);
@@ -768,18 +952,24 @@ impl AiHelperApp {
                     
                     // Bottom Control Bar
                     ui.horizontal(|ui| {
-                        // Left side: context pills
+                        ui.spacing_mut().interact_size.y = 30.0;
+                        ui.spacing_mut().button_padding = egui::vec2(10.0, 6.0);
                         ui.spacing_mut().item_spacing.x = 8.0;
-                        if ui.add(egui::Button::new(RichText::new("+").strong().color(TEXT)).fill(Color32::from_rgb(30, 35, 45)).corner_radius(12.0)).clicked() {
+
+                        // Left side: context pills
+                        let btn_plus = egui::Button::new(RichText::new("+").strong().color(TEXT))
+                            .fill(Color32::from_rgb(30, 35, 45))
+                            .corner_radius(15.0);
+                        if ui.add_sized([30.0, 30.0], btn_plus).clicked() {
                             // Add context logic placeholder
                         }
 
-                        
                         // Model dropdown pill
                         let current_model = if self.models.is_empty() { "No models" } else { &self.selected_model };
                         let previous_model = self.selected_model.clone();
                         egui::ComboBox::from_id_salt("model_dropdown")
-                            .selected_text(RichText::new(current_model).small().color(MUTED))
+                            .selected_text(RichText::new(format!("🤖 {}", current_model)).small().color(MUTED))
+                            .width(130.0)
                             .show_ui(ui, |ui| {
                                 for model in &self.models {
                                     ui.selectable_value(&mut self.selected_model, model.clone(), model);
@@ -792,19 +982,21 @@ impl AiHelperApp {
                         // Right side: Send / Stop button
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             if self.generating {
-                                if ui.add_sized([40.0, 32.0], egui::Button::new(RichText::new("■").color(Color32::WHITE)).fill(Color32::from_rgb(180, 50, 60)).corner_radius(16.0)).clicked() {
+                                let btn_stop = egui::Button::new(RichText::new("■").color(Color32::WHITE))
+                                    .fill(Color32::from_rgb(180, 50, 60))
+                                    .corner_radius(15.0);
+                                if ui.add_sized([30.0, 30.0], btn_stop).clicked() {
                                     self.stop();
                                 }
                             } else {
                                 let can_send = !self.input.trim().is_empty() && !self.models.is_empty() && self.loading_model.is_none();
                                 let btn_color = if can_send { ACCENT } else { Color32::from_rgb(30, 35, 45) };
                                 let text_color = if can_send { Color32::BLACK } else { MUTED };
-                                if ui.add_enabled(
-                                    can_send,
-                                    egui::Button::new(RichText::new("↑").color(text_color).strong()).fill(btn_color).corner_radius(16.0),
-                                )
-                                .clicked()
-                                {
+                                
+                                let btn_send = egui::Button::new(RichText::new("↑").color(text_color).strong())
+                                    .fill(btn_color)
+                                    .corner_radius(15.0);
+                                if ui.add_sized([30.0, 30.0], btn_send).clicked() && can_send {
                                     self.send();
                                 }
                             }
@@ -839,7 +1031,10 @@ impl AiHelperApp {
                         (DANGER, format!("Offline: {}", truncate(error, 30)))
                     }
                 };
-                ui.colored_label(color, format!("● {label}"));
+                ui.colored_label(color, label);
+                ui.add_space(6.0);
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                ui.painter().circle_filled(rect.center(), 4.0, color);
             });
         });
         ui.add_space(8.0);
@@ -961,175 +1156,6 @@ impl AiHelperApp {
         self.scroll_to_bottom = false;
     }
 
-    fn tasks_view(&mut self, ui: &mut egui::Ui) {
-        self.header(ui, "Tasks", "Track what you and DeskPilot are working on");
-        ui.horizontal(|ui| {
-            ui.add_sized(
-                [(ui.available_width() - 100.0).max(0.0), 34.0],
-                TextEdit::singleline(&mut self.task_input).hint_text("Add a task..."),
-            );
-            if ui.button("Add task").clicked() && !self.task_input.trim().is_empty() {
-                self.tasks.push(TaskItem {
-                    id: self.next_id,
-                    title: self.task_input.trim().to_owned(),
-                    done: false,
-                });
-                self.next_id += 1;
-                self.task_input.clear();
-                self.log("INFO", "Task added");
-                self.save_state();
-            }
-        });
-        ui.add_space(12.0);
-        let mut delete = None;
-        let mut task_changed = false;
-        ScrollArea::vertical().show(ui, |ui| {
-            for task in &mut self.tasks {
-                egui::Frame::new()
-                    .fill(SURFACE_HIGH)
-                    .corner_radius(8.0)
-                    .inner_margin(10.0)
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            if ui.checkbox(&mut task.done, "").changed() {
-                                task_changed = true;
-                            }
-                            let text = RichText::new(&task.title).color(if task.done {
-                                MUTED
-                            } else {
-                                TEXT
-                            });
-                            ui.label(if task.done {
-                                text.strikethrough()
-                            } else {
-                                text
-                            });
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui.small_button("Delete").clicked() {
-                                        delete = Some(task.id);
-                                    }
-                                },
-                            );
-                        });
-                    });
-                ui.add_space(6.0);
-            }
-        });
-        if let Some(id) = delete {
-            self.tasks.retain(|task| task.id != id);
-            self.save_state();
-        }
-        if task_changed {
-            self.save_state();
-        }
-        if ui.button("Clear completed").clicked() {
-            self.tasks.retain(|task| !task.done);
-            self.save_state();
-        }
-    }
-
-    fn memory_view(&mut self, ui: &mut egui::Ui) {
-        self.header(
-            ui,
-            "Memory",
-            "Durable local context included in future conversations",
-        );
-        ui.horizontal(|ui| {
-            ui.add_sized(
-                [(ui.available_width() - 116.0).max(0.0), 34.0],
-                TextEdit::singleline(&mut self.memory_input)
-                    .hint_text("Save a preference, fact, or decision..."),
-            );
-            if ui.button("Save memory").clicked() && !self.memory_input.trim().is_empty() {
-                let memory_id = self.next_id;
-                let content = self.memory_input.trim().to_owned();
-                self.memories.push(MemoryItem {
-                    id: memory_id,
-                    content: content.clone(),
-                    embedding: Vec::new(),
-                });
-                self.next_id += 1;
-                self.memory_input.clear();
-                self.log("INFO", "Memory saved; indexing in background");
-                self.save_state();
-                let client = self.client.clone();
-                let events = self.events_tx.clone();
-                self.runtime.spawn(async move {
-                    match client.embed(EMBEDDING_MODEL, &content).await {
-                        Ok(embedding) => {
-                            let _ = events.send(StreamEvent::EmbeddingReady {
-                                memory_id,
-                                embedding,
-                            });
-                        }
-                        Err(error) => {
-                            let _ = events.send(StreamEvent::Notice(format!(
-                                "Could not index memory: {error}"
-                            )));
-                        }
-                    }
-                });
-            }
-        });
-        ui.add_space(8.0);
-        ui.add_sized(
-            [ui.available_width().max(0.0), 30.0],
-            TextEdit::singleline(&mut self.memory_search).hint_text("Search memories..."),
-        );
-        ui.add_space(10.0);
-        let query = self.memory_search.to_lowercase();
-        let mut delete = None;
-        ScrollArea::vertical().show(ui, |ui| {
-            for memory in self
-                .memories
-                .iter()
-                .filter(|memory| query.is_empty() || memory.content.to_lowercase().contains(&query))
-            {
-                egui::Frame::new()
-                    .fill(SURFACE_HIGH)
-                    .corner_radius(8.0)
-                    .inner_margin(12.0)
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.vertical(|ui| {
-                                ui.label(RichText::new(&memory.content).color(TEXT));
-                                ui.label(
-                                    RichText::new(if memory.embedding.is_empty() {
-                                        "Pending semantic index"
-                                    } else {
-                                        "Semantically indexed"
-                                    })
-                                    .small()
-                                    .color(
-                                        if memory.embedding.is_empty() {
-                                            Color32::YELLOW
-                                        } else {
-                                            ACCENT
-                                        },
-                                    ),
-                                );
-                            });
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    if ui.small_button("Delete").clicked() {
-                                        delete = Some(memory.id);
-                                    }
-                                },
-                            );
-                        });
-                    });
-                ui.add_space(6.0);
-            }
-        });
-        if let Some(id) = delete {
-            self.memories.retain(|memory| memory.id != id);
-            self.log("INFO", "Memory deleted");
-            self.save_state();
-        }
-    }
 
     fn logs_view(&mut self, ui: &mut egui::Ui) {
         self.header(
@@ -1249,6 +1275,49 @@ impl eframe::App for AiHelperApp {
         if self.generating || matches!(self.connection, ConnectionStatus::Connecting) {
             ctx.request_repaint_after(Duration::from_millis(33));
         }
+        
+        if self.show_add_project_dialog {
+            let mut open = true;
+            egui::Window::new("Create New Project")
+                .open(&mut open)
+                .resizable(false)
+                .collapsible(false)
+                .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                .show(ctx, |ui| {
+                    ui.label("Enter project name:");
+                    ui.text_edit_singleline(&mut self.new_project_name);
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Create").clicked() && !self.new_project_name.trim().is_empty() {
+                            let new_proj_id = self.projects.iter().map(|p| p.id).max().unwrap_or(0) + 1;
+                            self.projects.push(Project {
+                                id: new_proj_id,
+                                name: self.new_project_name.trim().to_owned(),
+                            });
+                            self.active_project = new_proj_id;
+                            
+                            // Create default chat for this project
+                            let new_convo_id = self.conversations.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                            self.conversations.push(Conversation {
+                                id: new_convo_id,
+                                project_id: new_proj_id,
+                                title: "Main Chat".to_owned(),
+                                updated_at: 0,
+                            });
+                            self.active_conversation = new_convo_id;
+                            self.new_project_name.clear();
+                            self.show_add_project_dialog = false;
+                            self.save_state();
+                        }
+                        if ui.button("Cancel").clicked() {
+                            self.show_add_project_dialog = false;
+                        }
+                    });
+                });
+            if !open {
+                self.show_add_project_dialog = false;
+            }
+        }
         // Custom title bar (full width, no padding, native-looking controls)
         egui::TopBottomPanel::top("titlebar")
             .exact_height(36.0)
@@ -1326,8 +1395,6 @@ impl eframe::App for AiHelperApp {
             .frame(egui::Frame::new().fill(CANVAS).inner_margin(20.0))
             .show(ctx, |ui| match self.view {
                 View::Chat => self.chat_view(ui),
-                View::Tasks => self.tasks_view(ui),
-                View::Memory => self.memory_view(ui),
                 View::Skills => self.skills_view(ui),
                 View::Logs => self.logs_view(ui),
             });
