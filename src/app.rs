@@ -688,6 +688,85 @@ impl AiHelperApp {
         ui.separator();
     }
 
+    fn chat_input_pane(&mut self, ui: &mut egui::Ui) {
+        let enter = ui.input(|input| input.key_pressed(egui::Key::Enter) && !input.modifiers.shift);
+        
+        egui::Frame::new()
+            .fill(Color32::from_rgb(15, 18, 23)) // Very dark, modern input box
+            .corner_radius(24.0)
+            .inner_margin(egui::Margin::symmetric(20, 16))
+            .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(35, 42, 53)))
+            .show(ui, |ui| {
+                ui.vertical(|ui| {
+                    // Text Area
+                    let width = (ui.available_width() - 20.0).max(120.0);
+                    ui.add_sized(
+                        [width, 24.0],
+                        TextEdit::multiline(&mut self.input)
+                            .hint_text("Ask anything...")
+                            .frame(false)
+                            .desired_rows(1)
+                            .text_color(Color32::from_rgb(240, 245, 255)),
+                    );
+                    
+                    ui.add_space(8.0);
+                    
+                    // Bottom Control Bar
+                    ui.horizontal(|ui| {
+                        // Left side: context pills
+                        ui.spacing_mut().item_spacing.x = 8.0;
+                        if ui.add(egui::Button::new(RichText::new("+").strong().color(TEXT)).fill(Color32::from_rgb(30, 35, 45)).corner_radius(12.0)).clicked() {
+                            // Add context logic placeholder
+                        }
+                        
+                        ui.add(egui::Button::new(RichText::new("Worktree").small().color(MUTED)).fill(Color32::from_rgb(20, 24, 30)).corner_radius(12.0).stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(35, 42, 53))));
+                        
+                        // Model dropdown pill
+                        let current_model = if self.models.is_empty() { "No models" } else { &self.selected_model };
+                        let previous_model = self.selected_model.clone();
+                        egui::ComboBox::from_id_salt("model_dropdown")
+                            .selected_text(RichText::new(current_model).small().color(MUTED))
+                            .show_ui(ui, |ui| {
+                                for model in &self.models {
+                                    ui.selectable_value(&mut self.selected_model, model.clone(), model);
+                                }
+                            });
+                        if previous_model != self.selected_model {
+                            self.switch_model(previous_model, self.selected_model.clone());
+                        }
+
+                        // Right side: Send / Stop button
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if self.generating {
+                                if ui.add_sized([40.0, 32.0], egui::Button::new(RichText::new("■").color(Color32::WHITE)).fill(Color32::from_rgb(180, 50, 60)).corner_radius(16.0)).clicked() {
+                                    self.stop();
+                                }
+                            } else {
+                                let can_send = !self.input.trim().is_empty() && !self.models.is_empty() && self.loading_model.is_none();
+                                let btn_color = if can_send { ACCENT } else { Color32::from_rgb(30, 35, 45) };
+                                let text_color = if can_send { Color32::BLACK } else { MUTED };
+                                if ui.add_enabled(
+                                    can_send,
+                                    egui::Button::new(RichText::new("↑").color(text_color).strong()).fill(btn_color).corner_radius(16.0),
+                                )
+                                .clicked()
+                                {
+                                    self.send();
+                                }
+                            }
+                        });
+                    });
+                });
+            });
+            
+        if enter && !self.generating {
+            while self.input.ends_with(['\r', '\n']) {
+                self.input.pop();
+            }
+            self.send();
+        }
+    }
+
     fn chat_view(&mut self, ui: &mut egui::Ui) {
         // Breadcrumb Header
         ui.horizontal(|ui| {
@@ -711,191 +790,106 @@ impl AiHelperApp {
         });
         ui.add_space(8.0);
         ui.separator();
+        ui.add_space(12.0);
 
-        let enter = ui.input(|input| input.key_pressed(egui::Key::Enter) && !input.modifiers.shift);
-        
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-            ui.add_space(16.0);
-            
-            // Consolidated Input Box
-            egui::Frame::new()
-                .fill(Color32::from_rgb(15, 18, 23))
-                .corner_radius(24.0)
-                .inner_margin(egui::Margin::symmetric(20, 16))
-                .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(35, 42, 53)))
-                .show(ui, |ui| {
-                    ui.vertical(|ui| {
-                        // Text Area
-                        let width = (ui.available_width() - 20.0).max(120.0);
-                        ui.add_sized(
-                            [width, 24.0],
-                            TextEdit::multiline(&mut self.input)
-                                .hint_text("Ask anything...")
-                                .frame(false)
-                                .desired_rows(1)
-                                .text_color(Color32::from_rgb(240, 245, 255)),
-                        );
+        // Messages Area
+        ScrollArea::vertical()
+            .id_salt("messages")
+            .stick_to_bottom(self.scroll_to_bottom)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                let active_messages: Vec<_> = self.messages.iter().filter(|m| m.conversation_id == self.active_conversation).collect();
+                if active_messages.is_empty() {
+                    ui.add_space(80.0);
+                    ui.vertical_centered(|ui| {
+                        ui.label(RichText::new("DeskPilot is ready").size(28.0).strong().color(TEXT));
+                        ui.add_space(8.0);
+                        ui.label(RichText::new("Ask a question, plan work, or save knowledge for later.").size(16.0).color(MUTED));
+                    });
+                }
+                
+                let last_active = active_messages.last().copied();
+                for message in active_messages {
+                    if message.role == Role::System || (message.content.is_empty() && message.thinking.is_empty() && message.tool_uses.is_empty()) {
+                        continue;
+                    }
+                    
+                    ui.add_space(20.0);
+                    
+                    if message.role == Role::User {
+                        // Modern User Card
+                        egui::Frame::new()
+                            .fill(Color32::from_rgb(22, 26, 33))
+                            .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(45, 52, 64)))
+                            .corner_radius(16.0)
+                            .inner_margin(egui::Margin::symmetric(16, 16))
+                            .show(ui, |ui| {
+                                ui.set_width(ui.available_width());
+                                ui.label(RichText::new(&message.content).color(Color32::from_rgb(220, 225, 235)).size(15.0));
+                            });
+                    } else {
+                        // Assistant Flat Layout
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("●").color(ACCENT).size(12.0));
+                            ui.add_space(4.0);
+                            ui.label(RichText::new("DeskPilot").strong().color(TEXT));
+                            if message.created_at > 0 {
+                                ui.label(RichText::new(format_message_time(message.created_at)).small().color(MUTED));
+                            }
+                        });
                         
                         ui.add_space(8.0);
                         
-                        // Bottom Control Bar
                         ui.horizontal(|ui| {
-                            // Left side: context pills
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            if ui.add(egui::Button::new(RichText::new("+").strong().color(TEXT)).fill(Color32::from_rgb(30, 35, 45)).corner_radius(12.0)).clicked() {
-                                // Add context logic placeholder
-                            }
-                            
-                            ui.add(egui::Button::new(RichText::new("Worktree").small().color(MUTED)).fill(Color32::from_rgb(20, 24, 30)).corner_radius(12.0).stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(35, 42, 53))));
-                            
-                            // Model dropdown pill
-                            let current_model = if self.models.is_empty() { "No models" } else { &self.selected_model };
-                            let previous_model = self.selected_model.clone();
-                            egui::ComboBox::from_id_salt("model_dropdown")
-                                .selected_text(RichText::new(current_model).small().color(MUTED))
-                                .show_ui(ui, |ui| {
-                                    for model in &self.models {
-                                        ui.selectable_value(&mut self.selected_model, model.clone(), model);
-                                    }
-                                });
-                            if previous_model != self.selected_model {
-                                self.switch_model(previous_model, self.selected_model.clone());
-                            }
-
-                            // Right side: Send / Stop button
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if self.generating {
-                                    if ui.add_sized([40.0, 32.0], egui::Button::new(RichText::new("■").color(Color32::WHITE)).fill(Color32::from_rgb(180, 50, 60)).corner_radius(16.0)).clicked() {
-                                        self.stop();
-                                    }
-                                } else {
-                                    let can_send = !self.input.trim().is_empty() && !self.models.is_empty() && self.loading_model.is_none();
-                                    let btn_color = if can_send { ACCENT } else { Color32::from_rgb(30, 35, 45) };
-                                    let text_color = if can_send { Color32::BLACK } else { MUTED };
-                                    if ui.add_enabled(
-                                        can_send,
-                                        egui::Button::new(RichText::new("↑").color(text_color).strong()).fill(btn_color).corner_radius(16.0),
-                                    )
-                                    .clicked()
-                                    {
-                                        self.send();
-                                    }
+                            ui.add_space(24.0);
+                            ui.vertical(|ui| {
+                                if !message.thinking.is_empty() {
+                                    let is_active = self.generating && last_active.is_some_and(|last| std::ptr::eq(message, last));
+                                    let header_text = if is_active { format!("⟳ Thinking...") } else { let words = message.thinking.split_whitespace().count(); format!("💭 Reasoning ({words} words) ›") };
+                                    egui::CollapsingHeader::new(RichText::new(header_text).small().color(MUTED).italics())
+                                    .default_open(is_active)
+                                    .show(ui, |ui| {
+                                        ui.label(RichText::new(&message.thinking).monospace().small().color(Color32::from_rgb(140, 140, 160)));
+                                    });
+                                    ui.add_space(8.0);
+                                } else if message.content.is_empty() && message.tool_uses.is_empty() && self.generating {
+                                    ui.label(RichText::new(if self.high_thinking { "⟳ Thinking..." } else { "Preparing a response..." }).italics().color(MUTED));
+                                }
+                                
+                                if !message.tool_uses.is_empty() {
+                                    let tool_count = message.tool_uses.len();
+                                    let all_ok = message.tool_uses.iter().all(|(_, _, ok)| *ok);
+                                    let is_active = self.generating && last_active.is_some_and(|last| std::ptr::eq(message, last));
+                                    let header_text = if is_active { format!("⚙ Running tools ({tool_count})...") } else { let icon = if all_ok { "✓" } else { "⚠" }; format!("{icon} Used {tool_count} tool{} ›", if tool_count == 1 { "" } else { "s" }) };
+                                    let header_color = if all_ok { Color32::from_rgb(100, 180, 120) } else { Color32::from_rgb(255, 180, 80) };
+                                    egui::CollapsingHeader::new(RichText::new(header_text).small().strong().color(header_color))
+                                    .default_open(is_active)
+                                    .show(ui, |ui| {
+                                        for (tool_name, detail, success) in &message.tool_uses {
+                                            ui.horizontal(|ui| {
+                                                let icon = if *success { "✓" } else { "✗" };
+                                                let icon_color = if *success { Color32::from_rgb(100, 180, 120) } else { DANGER };
+                                                ui.label(RichText::new(icon).color(icon_color).strong());
+                                                ui.label(RichText::new(tool_name).monospace().small().strong().color(TEXT));
+                                            });
+                                            ui.label(RichText::new(detail).monospace().small().color(MUTED));
+                                            ui.add_space(4.0);
+                                        }
+                                    });
+                                    ui.add_space(8.0);
+                                }
+                                
+                                if !message.content.is_empty() {
+                                    ui.set_max_width(ui.available_width() * 0.95);
+                                    ui.style_mut().url_in_tooltip = true;
+                                    CommonMarkViewer::new().show(ui, &mut self.markdown_cache, &message.content);
                                 }
                             });
                         });
-                    });
-                });
-                
-            if enter && !self.generating {
-                while self.input.ends_with(['\r', '\n']) {
-                    self.input.pop();
+                    }
                 }
-                self.send();
-            }
-
-            ui.add_space(12.0);
-            
-            // Messages Area
-            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
-                ScrollArea::vertical()
-                    .id_salt("messages")
-                    .stick_to_bottom(self.scroll_to_bottom)
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
-                        let active_messages: Vec<_> = self.messages.iter().filter(|m| m.conversation_id == self.active_conversation).collect();
-                        if active_messages.is_empty() {
-                            ui.add_space(80.0);
-                            ui.vertical_centered(|ui| {
-                                ui.label(RichText::new("DeskPilot is ready").size(28.0).strong().color(TEXT));
-                                ui.add_space(8.0);
-                                ui.label(RichText::new("Ask a question, plan work, or save knowledge for later.").size(16.0).color(MUTED));
-                            });
-                        }
-                        
-                        let last_active = active_messages.last().copied();
-                        for message in active_messages {
-                            if message.role == Role::System || (message.content.is_empty() && message.thinking.is_empty() && message.tool_uses.is_empty()) {
-                                continue;
-                            }
-                            
-                            ui.add_space(20.0);
-                            
-                            if message.role == Role::User {
-                                // Modern User Card
-                                egui::Frame::new()
-                                    .fill(Color32::from_rgb(22, 26, 33))
-                                    .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(45, 52, 64)))
-                                    .corner_radius(16.0)
-                                    .inner_margin(egui::Margin::symmetric(16, 16))
-                                    .show(ui, |ui| {
-                                        ui.set_width(ui.available_width());
-                                        ui.label(RichText::new(&message.content).color(Color32::from_rgb(220, 225, 235)).size(15.0));
-                                    });
-                            } else {
-                                // Assistant Flat Layout
-                                ui.horizontal(|ui| {
-                                    ui.label(RichText::new("●").color(ACCENT).size(12.0));
-                                    ui.add_space(4.0);
-                                    ui.label(RichText::new("DeskPilot").strong().color(TEXT));
-                                    if message.created_at > 0 {
-                                        ui.label(RichText::new(format_message_time(message.created_at)).small().color(MUTED));
-                                    }
-                                });
-                                
-                                ui.add_space(8.0);
-                                
-                                ui.horizontal(|ui| {
-                                    ui.add_space(24.0);
-                                    ui.vertical(|ui| {
-                                        if !message.thinking.is_empty() {
-                                            let is_active = self.generating && last_active.is_some_and(|last| std::ptr::eq(message, last));
-                                            let header_text = if is_active { format!("⟳ Thinking...") } else { let words = message.thinking.split_whitespace().count(); format!("💭 Reasoning ({words} words) ›") };
-                                            egui::CollapsingHeader::new(RichText::new(header_text).small().color(MUTED).italics())
-                                            .default_open(is_active)
-                                            .show(ui, |ui| {
-                                                ui.label(RichText::new(&message.thinking).monospace().small().color(Color32::from_rgb(140, 140, 160)));
-                                            });
-                                            ui.add_space(8.0);
-                                        } else if message.content.is_empty() && message.tool_uses.is_empty() && self.generating {
-                                            ui.label(RichText::new(if self.high_thinking { "⟳ Thinking..." } else { "Preparing a response..." }).italics().color(MUTED));
-                                        }
-                                        
-                                        if !message.tool_uses.is_empty() {
-                                            let tool_count = message.tool_uses.len();
-                                            let all_ok = message.tool_uses.iter().all(|(_, _, ok)| *ok);
-                                            let is_active = self.generating && last_active.is_some_and(|last| std::ptr::eq(message, last));
-                                            let header_text = if is_active { format!("⚙ Running tools ({tool_count})...") } else { let icon = if all_ok { "✓" } else { "⚠" }; format!("{icon} Used {tool_count} tool{} ›", if tool_count == 1 { "" } else { "s" }) };
-                                            let header_color = if all_ok { Color32::from_rgb(100, 180, 120) } else { Color32::from_rgb(255, 180, 80) };
-                                            egui::CollapsingHeader::new(RichText::new(header_text).small().strong().color(header_color))
-                                            .default_open(is_active)
-                                            .show(ui, |ui| {
-                                                for (tool_name, detail, success) in &message.tool_uses {
-                                                    ui.horizontal(|ui| {
-                                                        let icon = if *success { "✓" } else { "✗" };
-                                                        let icon_color = if *success { Color32::from_rgb(100, 180, 120) } else { DANGER };
-                                                        ui.label(RichText::new(icon).color(icon_color).strong());
-                                                        ui.label(RichText::new(tool_name).monospace().small().strong().color(TEXT));
-                                                    });
-                                                    ui.label(RichText::new(detail).monospace().small().color(MUTED));
-                                                    ui.add_space(4.0);
-                                                }
-                                            });
-                                            ui.add_space(8.0);
-                                        }
-                                        
-                                        if !message.content.is_empty() {
-                                            ui.set_max_width(ui.available_width() * 0.95);
-                                            ui.style_mut().url_in_tooltip = true;
-                                            CommonMarkViewer::new().show(ui, &mut self.markdown_cache, &message.content);
-                                        }
-                                    });
-                                });
-                            }
-                        }
-                    });
             });
-        });
         self.scroll_to_bottom = false;
     }
 
@@ -1187,20 +1181,19 @@ impl eframe::App for AiHelperApp {
         if self.generating || matches!(self.connection, ConnectionStatus::Connecting) {
             ctx.request_repaint_after(Duration::from_millis(33));
         }
-        // Custom title bar
+        // Custom title bar (full width, no padding, native-looking controls)
         egui::TopBottomPanel::top("titlebar")
             .exact_height(36.0)
-            .frame(egui::Frame::new().fill(Color32::from_rgb(12, 12, 14)).inner_margin(egui::Margin { left: 14, right: 8, top: 6, bottom: 6 }))
+            .frame(egui::Frame::new().fill(Color32::from_rgb(12, 12, 14)).inner_margin(egui::Margin::symmetric(0, 0)))
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("DP").strong().size(12.0).color(Color32::from_rgb(10, 10, 10)).background_color(ACCENT));
-                    ui.add_space(6.0);
-                    ui.label(RichText::new("DeskPilot").strong().size(13.0).color(TEXT));
-                    // Draggable region
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    
+                    // Invisible draggable region
                     let drag_rect = ui.available_rect_before_wrap();
                     let drag_rect = egui::Rect::from_min_size(
                         drag_rect.min,
-                        egui::vec2(drag_rect.width() - 120.0, drag_rect.height()),
+                        egui::vec2((drag_rect.width() - 138.0).max(0.0), 36.0),
                     );
                     let drag_response = ui.interact(drag_rect, ui.id().with("titlebar_drag"), egui::Sense::click_and_drag());
                     if drag_response.dragged() {
@@ -1211,29 +1204,30 @@ impl eframe::App for AiHelperApp {
                             !ctx.input(|i| i.viewport().maximized.unwrap_or(false))
                         ));
                     }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    
+                    // Allocate layout space for the drag zone
+                    ui.allocate_space(egui::vec2((ui.available_width() - 138.0).max(0.0), 36.0));
+                    
+                    // Right-aligned modern window control buttons (46px wide each)
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         // Close
-                        let close_btn = egui::Button::new(RichText::new("✕").size(13.0).color(TEXT)).fill(Color32::TRANSPARENT).frame(false);
-                        if ui.add(close_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        if titlebar_button(ui, "✕", Color32::from_rgb(232, 17, 35), TEXT).clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                         }
-                        ui.add_space(4.0);
                         // Maximize
-                        let max_btn = egui::Button::new(RichText::new("□").size(13.0).color(MUTED)).fill(Color32::TRANSPARENT).frame(false);
-                        if ui.add(max_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(
-                                !ctx.input(|i| i.viewport().maximized.unwrap_or(false))
-                            ));
+                        let is_max = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
+                        let max_symbol = if is_max { "❐" } else { "□" };
+                        if titlebar_button(ui, max_symbol, Color32::from_rgb(45, 50, 60), MUTED).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_max));
                         }
-                        ui.add_space(4.0);
                         // Minimize
-                        let min_btn = egui::Button::new(RichText::new("─").size(13.0).color(MUTED)).fill(Color32::TRANSPARENT).frame(false);
-                        if ui.add(min_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                        if titlebar_button(ui, "─", Color32::from_rgb(45, 50, 60), MUTED).clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                         }
                     });
                 });
             });
+
         egui::SidePanel::left("sidebar")
             .exact_width(240.0)
             .frame(egui::Frame::new()
@@ -1241,6 +1235,7 @@ impl eframe::App for AiHelperApp {
                 .inner_margin(12.0)
                 .stroke(egui::Stroke::new(1.0_f32, BORDER)))
             .show(ctx, |ui| self.sidebar(ui));
+
         egui::SidePanel::right("inspector")
             .exact_width(270.0)
             .frame(egui::Frame::new()
@@ -1248,6 +1243,16 @@ impl eframe::App for AiHelperApp {
                 .inner_margin(14.0)
                 .stroke(egui::Stroke::new(1.0_f32, BORDER)))
             .show(ctx, |ui| self.inspector(ui));
+
+        // If Chat is active, draw the bottom input container before the CentralPanel
+        if self.view == View::Chat {
+            egui::TopBottomPanel::bottom("chat_input_panel")
+                .frame(egui::Frame::none().fill(CANVAS).inner_margin(egui::Margin { left: 20, right: 20, top: 0, bottom: 20 }))
+                .show(ctx, |ui| {
+                    self.chat_input_pane(ui);
+                });
+        }
+
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(CANVAS).inner_margin(20.0))
             .show(ctx, |ui| match self.view {
@@ -1359,4 +1364,23 @@ fn format_message_time(timestamp: i64) -> String {
         .single()
         .map(|time| time.format("%I:%M %p").to_string())
         .unwrap_or_default()
+}
+
+fn titlebar_button(ui: &mut egui::Ui, text: &str, hover_bg: Color32, text_color: Color32) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(46.0, 36.0), egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let is_hovered = response.hovered();
+        let bg_color = if is_hovered { hover_bg } else { Color32::TRANSPARENT };
+        ui.painter().rect_filled(rect, egui::CornerRadius::ZERO, bg_color);
+        
+        let final_text_color = if is_hovered { Color32::WHITE } else { text_color };
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            text,
+            egui::FontId::proportional(12.0),
+            final_text_color
+        );
+    }
+    response
 }
