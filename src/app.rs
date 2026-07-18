@@ -503,7 +503,14 @@ impl AiHelperApp {
             )
             .clicked()
         {
-            self.messages.clear();
+            let new_id = self.conversations.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+            self.conversations.push(Conversation {
+                id: new_id,
+                project_id: self.active_project,
+                title: "New Chat".to_owned(),
+                updated_at: 0,
+            });
+            self.active_conversation = new_id;
             self.view = View::Chat;
             self.log("INFO", "New conversation started");
             self.save_state();
@@ -537,26 +544,37 @@ impl AiHelperApp {
             }
         }
         ui.add_space(18.0);
-        ui.label(RichText::new("RECENT").small().strong().color(MUTED));
+        ui.label(RichText::new("CONVERSATIONS").small().strong().color(MUTED));
         ui.add_space(6.0);
-        let recent_title = self
-            .messages
-            .iter()
-            .find(|message| message.role == Role::User)
-            .map(|message| truncate(&message.content, 28))
-            .unwrap_or_else(|| "No conversations yet".to_owned());
-        if ui
-            .add_sized(
-                [215.0, 48.0],
-                egui::Button::new(recent_title).fill(if self.view == View::Chat {
-                    SURFACE_HIGH
-                } else {
-                    Color32::TRANSPARENT
-                }),
-            )
-            .clicked()
-        {
-            self.view = View::Chat;
+        
+        let mut to_delete = None;
+        ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+            for convo in self.conversations.clone() {
+                let is_active = convo.id == self.active_conversation && self.view == View::Chat;
+                let fill = if is_active { SURFACE_HIGH } else { Color32::TRANSPARENT };
+                let mut title = truncate(&convo.title, 24);
+                if title.is_empty() { title = "Empty Chat".to_string(); }
+                
+                ui.horizontal(|ui| {
+                    if ui.add_sized([185.0, 32.0], egui::Button::new(RichText::new(title).color(if is_active { ACCENT } else { TEXT })).fill(fill)).clicked() {
+                        self.active_conversation = convo.id;
+                        self.active_project = convo.project_id;
+                        self.view = View::Chat;
+                        self.save_state();
+                    }
+                    if ui.add_sized([24.0, 32.0], egui::Button::new("×").fill(Color32::TRANSPARENT)).clicked() {
+                        to_delete = Some(convo.id);
+                    }
+                });
+            }
+        });
+        if let Some(id) = to_delete {
+            self.conversations.retain(|c| c.id != id);
+            self.messages.retain(|m| m.conversation_id != id);
+            if self.active_conversation == id {
+                self.active_conversation = self.conversations.first().map(|c| c.id).unwrap_or(1);
+            }
+            self.save_state();
         }
         ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
             let done = self.tasks.iter().filter(|task| task.done).count();
@@ -749,7 +767,8 @@ impl AiHelperApp {
                     .stick_to_bottom(self.scroll_to_bottom)
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
-                        if self.messages.is_empty() {
+                        let active_messages: Vec<_> = self.messages.iter().filter(|m| m.conversation_id == self.active_conversation).collect();
+                        if active_messages.is_empty() {
                             ui.add_space(80.0);
                             ui.vertical_centered(|ui| {
                                 ui.label(
@@ -766,7 +785,8 @@ impl AiHelperApp {
                                 );
                             });
                         }
-                        for message in &self.messages {
+                        let last_active = active_messages.last().copied();
+                        for message in active_messages {
                             if message.role == Role::System
                                 || (message.content.is_empty() && message.thinking.is_empty() && message.tool_uses.is_empty())
                             {
@@ -796,7 +816,7 @@ impl AiHelperApp {
                             // Thinking dropdown
                             if message.role == Role::Assistant && !message.thinking.is_empty() {
                                 let is_active = self.generating
-                                    && std::ptr::eq(message, self.messages.last().unwrap());
+                                    && last_active.is_some_and(|last| std::ptr::eq(message, last));
                                 let header_text = if is_active {
                                     format!("⟳ Thinking...")
                                 } else {
@@ -843,7 +863,7 @@ impl AiHelperApp {
                                 let tool_count = message.tool_uses.len();
                                 let all_ok = message.tool_uses.iter().all(|(_, _, ok)| *ok);
                                 let is_active = self.generating
-                                    && std::ptr::eq(message, self.messages.last().unwrap());
+                                    && last_active.is_some_and(|last| std::ptr::eq(message, last));
                                 let header_text = if is_active {
                                     format!("⚙ Running tools ({tool_count})...")
                                 } else {
