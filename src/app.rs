@@ -727,180 +727,84 @@ impl AiHelperApp {
         ui.add_space(10.0);
         ui.separator();
         
-        // 2. CURRENT WORK (Todo list)
-        inspector_label(ui, "TODO LIST");
-        
-        // Add task input
-        ui.horizontal(|ui| {
-            ui.spacing_mut().interact_size.y = 26.0;
-            ui.add_sized(
-                [(ui.available_width() - 48.0).max(0.0), 26.0],
-                TextEdit::singleline(&mut self.task_input).hint_text("Add a task..."),
-            );
-            if ui.add_sized([40.0, 26.0], egui::Button::new("Add")).clicked() && !self.task_input.trim().is_empty() {
-                self.tasks.push(TaskItem {
-                    id: self.next_id,
-                    title: self.task_input.trim().to_owned(),
-                    done: false,
-                });
-                self.next_id += 1;
-                self.task_input.clear();
-                self.log("INFO", "Task added");
-                self.save_state();
-            }
-        });
-        ui.add_space(6.0);
+        // 2. CURRENT WORK (Todo list of the agent)
+        inspector_label(ui, "AGENT TODO LIST");
         
         // Task list
-        let mut delete_task = None;
-        let mut task_changed = false;
         let active_tasks: Vec<_> = self.tasks.clone();
         if active_tasks.is_empty() {
-            ui.label(RichText::new("No tasks remaining").small().color(MUTED));
+            ui.label(RichText::new("No active operations").small().color(MUTED));
         } else {
             ScrollArea::vertical()
                 .id_salt("inspector_tasks_scroll")
-                .max_height(140.0)
+                .max_height(200.0)
                 .show(ui, |ui| {
                     ui.set_width(ui.available_width().max(0.0));
-                    for task in &mut self.tasks {
+                    for task in active_tasks {
                         ui.horizontal(|ui| {
-                            if ui.checkbox(&mut task.done, "").changed() {
-                                task_changed = true;
+                            let dot_color = if task.done { ACCENT } else { Color32::from_rgb(100, 140, 240) };
+                            let (rect, _) = ui.allocate_exact_size(egui::vec2(12.0, 12.0), egui::Sense::hover());
+                            if task.done {
+                                // Draw a checkmark inside a filled box
+                                ui.painter().rect_filled(rect, 3.0, SURFACE_HIGH);
+                                ui.painter().rect_stroke(rect, 3.0, egui::Stroke::new(1.0, dot_color), egui::StrokeKind::Outside);
+                                let center = rect.center();
+                                ui.painter().line_segment(
+                                    [center + egui::vec2(-3.0, 0.0), center + egui::vec2(-1.0, 2.0)],
+                                    egui::Stroke::new(1.5, dot_color),
+                                );
+                                ui.painter().line_segment(
+                                    [center + egui::vec2(-1.0, 2.0), center + egui::vec2(3.0, -2.0)],
+                                    egui::Stroke::new(1.5, dot_color),
+                                );
+                            } else {
+                                // Draw empty square outline
+                                ui.painter().rect_stroke(
+                                    rect,
+                                    3.0,
+                                    egui::Stroke::new(1.0, Color32::from_rgb(100, 110, 130)),
+                                    egui::StrokeKind::Outside,
+                                );
                             }
-                            let text = RichText::new(&task.title).small().color(if task.done { MUTED } else { TEXT });
-                            ui.label(if task.done { text.strikethrough() } else { text });
+                            ui.add_space(8.0);
                             
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.add(egui::Button::new(RichText::new("×").color(MUTED)).fill(Color32::TRANSPARENT)).clicked() {
-                                    delete_task = Some(task.id);
-                                }
-                            });
+                            // High-contrast text sizing
+                            let text = RichText::new(task.title).size(13.0).color(if task.done { MUTED } else { TEXT });
+                            ui.label(if task.done { text.strikethrough() } else { text });
                         });
+                        ui.add_space(6.0);
                     }
                 });
         }
-        if let Some(id) = delete_task {
-            self.tasks.retain(|t| t.id != id);
-            self.save_state();
-        }
-        if task_changed {
-            self.save_state();
-        }
-        if self.tasks.iter().any(|t| t.done) {
-            ui.add_space(4.0);
-            if ui.small_button("Clear completed").clicked() {
-                self.tasks.retain(|t| !t.done);
-                self.save_state();
-            }
-        }
         
-        ui.add_space(10.0);
+        ui.add_space(12.0);
         ui.separator();
         
         // 3. MEMORY (Durable local preferences)
-        inspector_label(ui, "PROJECT MEMORY");
+        inspector_label(ui, "AGENT MEMORY STATS");
         
         // Stats block
         egui::Frame::new()
             .fill(SURFACE_HIGH)
             .corner_radius(8.0)
-            .inner_margin(8.0)
+            .inner_margin(10.0)
             .show(ui, |ui| {
                 ui.set_width(ui.available_width().max(0.0));
                 ui.horizontal(|ui| {
-                    ui.label(RichText::new("Facts Stored:").small().color(MUTED));
+                    ui.label(RichText::new("Stored Facts:").small().color(MUTED));
                     ui.label(RichText::new(format!("{}", self.memories.len())).small().strong().color(TEXT));
                 });
+                ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("RAM Usage:").small().color(MUTED));
                     ui.label(RichText::new("14.2 GB / 32.0 GB").small().color(TEXT));
                 });
+                ui.add_space(4.0);
                 ui.horizontal(|ui| {
                     ui.label(RichText::new("VRAM Usage:").small().color(MUTED));
                     ui.label(RichText::new("6.8 GB / 12.0 GB (Local LLM)").small().color(TEXT));
                 });
             });
-        ui.add_space(8.0);
-        
-        // Save fact input
-        ui.horizontal(|ui| {
-            ui.spacing_mut().interact_size.y = 26.0;
-            ui.add_sized(
-                [(ui.available_width() - 52.0).max(0.0), 26.0],
-                TextEdit::singleline(&mut self.memory_input).hint_text("Save a preference/fact..."),
-            );
-            if ui.add_sized([44.0, 26.0], egui::Button::new("Save")).clicked() && !self.memory_input.trim().is_empty() {
-                let memory_id = self.next_id;
-                let content = self.memory_input.trim().to_owned();
-                self.memories.push(MemoryItem {
-                    id: memory_id,
-                    content: content.clone(),
-                    embedding: Vec::new(),
-                });
-                self.next_id += 1;
-                self.memory_input.clear();
-                self.log("INFO", "Memory saved; indexing in background");
-                self.save_state();
-                let client = self.client.clone();
-                let events = self.events_tx.clone();
-                self.runtime.spawn(async move {
-                    match client.embed(EMBEDDING_MODEL, &content).await {
-                        Ok(embedding) => {
-                            let _ = events.send(StreamEvent::EmbeddingReady {
-                                memory_id,
-                                embedding,
-                            });
-                        }
-                        Err(error) => {
-                            let _ = events.send(StreamEvent::Notice(format!("Could not index memory: {error}")));
-                        }
-                    }
-                });
-            }
-        });
-        ui.add_space(6.0);
-        
-        // Search & List memories
-        ui.add_sized(
-            [ui.available_width().max(0.0), 26.0],
-            TextEdit::singleline(&mut self.memory_search).hint_text("Search memories..."),
-        );
-        ui.add_space(6.0);
-        
-        let query = self.memory_search.to_lowercase();
-        let mut delete_memory = None;
-        
-        let filtered_memories: Vec<_> = self.memories
-            .iter()
-            .filter(|m| m.content.to_lowercase().contains(&query))
-            .collect();
-            
-        if filtered_memories.is_empty() {
-            ui.label(RichText::new("No facts found").small().color(MUTED));
-        } else {
-            ScrollArea::vertical()
-                .id_salt("inspector_memory_scroll")
-                .max_height(140.0)
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width().max(0.0));
-                    for memory in filtered_memories {
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new(format!("• {}", truncate(&memory.content, 26))).small().color(TEXT))
-                                .on_hover_text(&memory.content);
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.add(egui::Button::new(RichText::new("×").color(MUTED)).fill(Color32::TRANSPARENT)).clicked() {
-                                    delete_memory = Some(memory.id);
-                                }
-                            });
-                        });
-                    }
-                });
-        }
-        if let Some(id) = delete_memory {
-            self.memories.retain(|m| m.id != id);
-            self.save_state();
-        }
     }
 
     fn header(&mut self, ui: &mut egui::Ui, title: &str, subtitle: &str) {
