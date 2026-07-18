@@ -557,7 +557,7 @@ impl AiHelperApp {
                 
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    if ui.add_sized([183.0, 32.0], egui::Button::new(RichText::new(title).color(if is_active { ACCENT } else { TEXT })).fill(fill).truncate(true)).clicked() {
+                    if ui.add_sized([183.0, 32.0], egui::Button::new(RichText::new(title).color(if is_active { ACCENT } else { TEXT })).fill(fill).truncate()).clicked() {
                         self.active_conversation = convo.id;
                         self.active_project = convo.project_id;
                         self.view = View::Chat;
