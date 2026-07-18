@@ -6,6 +6,7 @@ mod ollama;
 mod single_instance;
 mod storage;
 mod tools;
+mod ipc;
 
 use std::sync::Arc;
 
@@ -22,6 +23,13 @@ fn main() -> eframe::Result<()> {
             .expect("failed to create Tokio runtime"),
     );
 
+    let (ipc_tx, ipc_rx) = tokio::sync::mpsc::unbounded_channel();
+    let r = runtime.clone();
+    let ipc_tx_clone = ipc_tx.clone();
+    r.spawn(async move {
+        ipc::start_server(ipc_tx_clone).await;
+    });
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(app::WINDOW_SIZE)
@@ -32,7 +40,7 @@ fn main() -> eframe::Result<()> {
     let result = eframe::run_native(
         "DeskPilot",
         options,
-        Box::new(move |cc| Ok(Box::new(AiHelperApp::new(cc, Arc::clone(&runtime))))),
+        Box::new(move |cc| Ok(Box::new(AiHelperApp::new(cc, Arc::clone(&runtime), ipc_rx)))),
     );
     drop(instance_guard);
     result

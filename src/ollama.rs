@@ -37,6 +37,7 @@ pub enum StreamEvent {
         detail: String,
         success: bool,
     },
+    RestartApp,
 }
 
 #[derive(Clone)]
@@ -314,6 +315,9 @@ impl OllamaClient {
                     detail,
                     success,
                 });
+                if name == "self_update" && success {
+                    let _ = events.send(StreamEvent::RestartApp);
+                }
                 history
                     .push(serde_json::json!({"role":"tool", "tool_name":name, "content":content}));
             }

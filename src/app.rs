@@ -8,7 +8,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::message::{Message, Role};
 use crate::ollama::{OllamaClient, StreamEvent, ToolContext};
-use crate::storage::{MemoryItem, PersistedState, Storage, TaskItem};
+use crate::storage::{Conversation, MemoryItem, PersistedState, Project, Storage, TaskItem};
 use crate::tools::{discover_skills, Skill};
 
 pub const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
@@ -24,7 +24,7 @@ const SURFACE_HIGH: Color32 = Color32::from_rgb(25, 31, 41);
 const BORDER: Color32 = Color32::from_rgb(43, 52, 66);
 const TEXT: Color32 = Color32::from_rgb(226, 232, 240);
 const MUTED: Color32 = Color32::from_rgb(128, 141, 158);
-const ACCENT: Color32 = Color32::from_rgb(169, 230, 100);
+const ACCENT: Color32 = Color32::from_rgb(57, 255, 20); // Neon Green
 const BLUE: Color32 = Color32::from_rgb(71, 118, 230);
 const DANGER: Color32 = Color32::from_rgb(232, 103, 116);
 
@@ -53,6 +53,10 @@ struct LogEntry {
 pub struct AiHelperApp {
     runtime: Arc<Runtime>,
     client: OllamaClient,
+    projects: Vec<Project>,
+    conversations: Vec<Conversation>,
+    active_project: u64,
+    active_conversation: u64,
     events_tx: mpsc::UnboundedSender<StreamEvent>,
     events_rx: mpsc::UnboundedReceiver<StreamEvent>,
     cancel_tx: Option<oneshot::Sender<()>>,
@@ -61,6 +65,8 @@ pub struct AiHelperApp {
     tasks: Vec<TaskItem>,
     memories: Vec<MemoryItem>,
     logs: Vec<LogEntry>,
+    ipc_rx: mpsc::UnboundedReceiver<String>,
+    _tray_icon: Option<tray_icon::TrayIcon>,
     input: String,
     task_input: String,
     memory_input: String,
@@ -78,12 +84,12 @@ pub struct AiHelperApp {
     next_id: u64,
     workspace: std::path::PathBuf,
     skills: Vec<Skill>,
-    tool_activity: Vec<(String, String, bool)>,
     markdown_cache: CommonMarkCache,
+    force_quit: bool,
 }
 
 impl AiHelperApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, runtime: Arc<Runtime>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, runtime: Arc<Runtime>, ipc_rx: mpsc::UnboundedReceiver<String>) -> Self {
         configure_style(&cc.egui_ctx);
         let storage = Storage::new();
         let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
@@ -131,17 +137,29 @@ impl AiHelperApp {
                 message: entry.message,
             })
             .collect();
+        let icon = tray_icon::Icon::from_rgba(vec![0, 255, 0, 255], 1, 1).unwrap();
+        let tray = tray_icon::TrayIconBuilder::new().with_tooltip("DeskPilot").with_icon(icon).build().ok();
+        
+        let active_project = persisted.projects.first().map(|p| p.id).unwrap_or(1);
+        let active_conversation = persisted.conversations.first().map(|c| c.id).unwrap_or(1);
+
         let mut app = Self {
+            storage,
             runtime,
             client,
-            events_tx,
             events_rx,
+            events_tx,
+            ipc_rx,
             cancel_tx: None,
-            storage,
+            projects: persisted.projects,
+            conversations: persisted.conversations,
+            active_project,
+            active_conversation,
             messages: persisted.messages,
             tasks: persisted.tasks,
             memories: persisted.memories,
             logs,
+            _tray_icon: tray,
             input: String::new(),
             task_input: String::new(),
             memory_input: String::new(),
@@ -159,8 +177,8 @@ impl AiHelperApp {
             next_id,
             workspace,
             skills,
-            tool_activity: Vec::new(),
             markdown_cache: CommonMarkCache::default(),
+            force_quit: false,
         };
         app.log("INFO", "DeskPilot started; loading local Ollama models");
         app
@@ -184,8 +202,10 @@ impl AiHelperApp {
         }
     }
 
-    fn save(&mut self) {
+    fn save_state(&self) {
         let state = PersistedState {
+            projects: self.projects.clone(),
+            conversations: self.conversations.clone(),
             messages: self.messages.clone(),
             tasks: self.tasks.clone(),
             memories: self.memories.clone(),
@@ -193,7 +213,7 @@ impl AiHelperApp {
             high_thinking: self.high_thinking,
         };
         if let Err(error) = self.storage.save(&state) {
-            self.log("ERROR", format!("Could not save local state: {error}"));
+            eprintln!("Failed to save state: {error}");
         }
     }
 
@@ -225,7 +245,7 @@ impl AiHelperApp {
                     self.loading_model = None;
                     self.model_error = None;
                     self.log("INFO", format!("Model {model} loaded and ready"));
-                    self.save();
+                    self.save_state();
                 }
                 StreamEvent::ModelLoadFailed { model, error } => {
                     self.loading_model = None;
@@ -242,7 +262,7 @@ impl AiHelperApp {
                         }
                     }
                     self.log("INFO", "Generation completed");
-                    self.save();
+                    self.save_state();
                 }
                 StreamEvent::Cancelled => {
                     self.generating = false;
@@ -250,7 +270,7 @@ impl AiHelperApp {
                     self.cancel_tx = None;
                     self.active_task = None;
                     self.log("WARN", "Generation cancelled by user");
-                    self.save();
+                    self.save_state();
                 }
                 StreamEvent::Error(error) => {
                     self.generating = false;
@@ -266,11 +286,12 @@ impl AiHelperApp {
                         self.messages.pop();
                     }
                     self.messages.push(Message::new(
+                        self.active_conversation,
                         Role::Assistant,
                         format!("Unable to respond: {error}"),
                     ));
                     self.log("ERROR", &error);
-                    self.save();
+                    self.save_state();
                 }
                 StreamEvent::ModelsLoaded(models) => {
                     self.models = models
@@ -292,7 +313,7 @@ impl AiHelperApp {
                             self.models.len()
                         ),
                     );
-                    self.save();
+                    self.save_state();
                 }
                 StreamEvent::EmbeddingReady {
                     memory_id,
@@ -308,7 +329,7 @@ impl AiHelperApp {
                             "INFO",
                             format!("Memory {memory_id} indexed for semantic recall"),
                         );
-                        self.save();
+                        self.save_state();
                     }
                 }
                 StreamEvent::Notice(message) => self.log("WARN", message),
@@ -321,7 +342,16 @@ impl AiHelperApp {
                         if success { "INFO" } else { "ERROR" },
                         format!("Tool {name}: {detail}"),
                     );
-                    self.tool_activity.push((name, detail, success));
+                    if let Some(message) = self.messages.last_mut() {
+                        if message.role == Role::Assistant {
+                            message.tool_uses.push((name, detail, success));
+                        }
+                    }
+                    self.scroll_to_bottom = true;
+                }
+                StreamEvent::RestartApp => {
+                    self.log("INFO", "Restart requested by agent tool");
+                    self.force_quit = true;
                 }
             }
         }
@@ -345,8 +375,8 @@ impl AiHelperApp {
             done: false,
         });
         self.active_task = Some(task_id);
-        self.messages.push(Message::new(Role::User, input.clone()));
-        self.messages.push(Message::new(Role::Assistant, ""));
+        self.messages.push(Message::new(self.active_conversation, Role::User, input.clone()));
+        self.messages.push(Message::new(self.active_conversation, Role::Assistant, ""));
         self.input.clear();
         self.generating = true;
         self.scroll_to_bottom = true;
@@ -354,7 +384,7 @@ impl AiHelperApp {
             "INFO",
             format!("Generation requested with model {}", self.selected_model),
         );
-        self.save();
+        self.save_state();
 
         let history = self.messages[..self.messages.len() - 1].to_vec();
         let memories = self.memories.clone();
@@ -373,6 +403,7 @@ impl AiHelperApp {
         let events = self.events_tx.clone();
         let (cancel_tx, cancel_rx) = oneshot::channel();
         self.cancel_tx = Some(cancel_tx);
+        let active_conversation = self.active_conversation;
         self.runtime.spawn(async move {
             let has_indexed_memory = memories.iter().any(|memory| !memory.embedding.is_empty());
             let selected_memories = if has_indexed_memory {
@@ -396,7 +427,7 @@ impl AiHelperApp {
             let memory_text = selected_memories.iter().map(|memory| format!("- {memory}")).collect::<Vec<_>>().join("\n");
             let task_text = open_tasks.iter().map(|task| format!("- {task}")).collect::<Vec<_>>().join("\n");
             let skill_text = skills.iter().map(|skill| format!("- {}: {}", skill.name, skill.description)).collect::<Vec<_>>().join("\n");
-            let mut contextual_history = vec![Message::new(Role::System, format!(
+            let mut contextual_history = vec![Message::new(active_conversation, Role::System, format!(
                 "You are DeskPilot, a private local assistant with local tools. Use tools when they provide evidence or are needed to complete the request. Never claim a command ran or a file changed unless its tool succeeded. Use read_skill before following a listed skill. Shell tools are workspace-scoped and reject destructive commands. Use relevant saved memory when helpful. Never claim a memory exists unless it appears below.\n\nAVAILABLE SKILLS\n{}\n\nRELEVANT MEMORY\n{}\n\nOPEN TASKS\n{}",
                 if skill_text.is_empty() { "None" } else { &skill_text },
                 if memory_text.is_empty() { "None" } else { &memory_text },
@@ -433,7 +464,7 @@ impl AiHelperApp {
         self.loading_model = Some(next.clone());
         self.model_error = None;
         self.log("INFO", format!("Switching model from {previous} to {next}"));
-        self.save();
+        self.save_state();
         let client = self.client.clone();
         let events = self.events_tx.clone();
         self.runtime.spawn(async move {
@@ -475,7 +506,7 @@ impl AiHelperApp {
             self.messages.clear();
             self.view = View::Chat;
             self.log("INFO", "New conversation started");
-            self.save();
+            self.save_state();
         }
         ui.add_space(14.0);
         for (view, label) in [
@@ -594,13 +625,23 @@ impl AiHelperApp {
         inspector_label(ui, "THINKING");
         ui.add_enabled_ui(!self.generating, |ui| {
             ui.horizontal(|ui| {
-                if ui.selectable_label(!self.high_thinking, "Fast").clicked() {
+                let fast_fill = if !self.high_thinking { ACCENT } else { SURFACE_HIGH };
+                let fast_text = if !self.high_thinking { Color32::from_rgb(10, 10, 10) } else { TEXT };
+                let fast_btn = egui::Button::new(RichText::new("Fast").color(fast_text).strong())
+                    .fill(fast_fill)
+                    .corner_radius(8.0);
+                if ui.add_sized([60.0, 28.0], fast_btn).clicked() {
                     self.high_thinking = false;
-                    self.save();
+                    self.save_state();
                 }
-                if ui.selectable_label(self.high_thinking, "High").clicked() {
+                let high_fill = if self.high_thinking { ACCENT } else { SURFACE_HIGH };
+                let high_text = if self.high_thinking { Color32::from_rgb(10, 10, 10) } else { TEXT };
+                let high_btn = egui::Button::new(RichText::new("High").color(high_text).strong())
+                    .fill(high_fill)
+                    .corner_radius(8.0);
+                if ui.add_sized([60.0, 28.0], high_btn).clicked() {
                     self.high_thinking = true;
-                    self.save();
+                    self.save_state();
                 }
             });
         });
@@ -727,7 +768,7 @@ impl AiHelperApp {
                         }
                         for message in &self.messages {
                             if message.role == Role::System
-                                || (message.content.is_empty() && message.thinking.is_empty())
+                                || (message.content.is_empty() && message.thinking.is_empty() && message.tool_uses.is_empty())
                             {
                                 continue;
                             }
@@ -752,44 +793,94 @@ impl AiHelperApp {
                                     );
                                 }
                             });
+                            // Thinking dropdown
                             if message.role == Role::Assistant && !message.thinking.is_empty() {
+                                let is_active = self.generating
+                                    && std::ptr::eq(message, self.messages.last().unwrap());
+                                let header_text = if is_active {
+                                    format!("⟳ Thinking...")
+                                } else {
+                                    let words = message.thinking.split_whitespace().count();
+                                    format!("💭 Reasoning ({words} words) ›")
+                                };
                                 egui::CollapsingHeader::new(
-                                    if self.generating
-                                        && std::ptr::eq(message, self.messages.last().unwrap())
-                                    {
-                                        "Thinking..."
-                                    } else {
-                                        "Reasoning"
-                                    },
+                                    RichText::new(header_text).small().color(MUTED).italics(),
                                 )
-                                .default_open(false)
+                                .default_open(is_active)
                                 .show(ui, |ui| {
                                     egui::Frame::new()
-                                        .fill(SURFACE)
-                                        .corner_radius(7.0)
-                                        .inner_margin(10.0)
+                                        .fill(Color32::from_rgb(22, 22, 28))
+                                        .corner_radius(8.0)
+                                        .inner_margin(12.0)
+                                        .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(40, 40, 50)))
                                         .show(ui, |ui| {
+                                            ui.set_max_width(ui.available_width() * 0.95);
                                             ui.label(
                                                 RichText::new(&message.thinking)
                                                     .monospace()
                                                     .small()
-                                                    .color(MUTED),
+                                                    .color(Color32::from_rgb(140, 140, 160)),
                                             );
                                         });
                                 });
                             } else if message.role == Role::Assistant
                                 && message.content.is_empty()
+                                && message.tool_uses.is_empty()
                                 && self.generating
                             {
                                 ui.label(
                                     RichText::new(if self.high_thinking {
-                                        "Thinking..."
+                                        "⟳ Thinking..."
                                     } else {
                                         "Preparing a response..."
                                     })
                                     .italics()
                                     .color(MUTED),
                                 );
+                            }
+                            // Tool usage dropdown
+                            if message.role == Role::Assistant && !message.tool_uses.is_empty() {
+                                let tool_count = message.tool_uses.len();
+                                let all_ok = message.tool_uses.iter().all(|(_, _, ok)| *ok);
+                                let is_active = self.generating
+                                    && std::ptr::eq(message, self.messages.last().unwrap());
+                                let header_text = if is_active {
+                                    format!("⚙ Running tools ({tool_count})...")
+                                } else {
+                                    let icon = if all_ok { "✓" } else { "⚠" };
+                                    format!("{icon} Used {tool_count} tool{} ›", if tool_count == 1 { "" } else { "s" })
+                                };
+                                let header_color = if all_ok { ACCENT } else { Color32::from_rgb(255, 180, 80) };
+                                egui::CollapsingHeader::new(
+                                    RichText::new(header_text).small().strong().color(header_color),
+                                )
+                                .default_open(is_active)
+                                .show(ui, |ui| {
+                                    for (tool_name, detail, success) in &message.tool_uses {
+                                        egui::Frame::new()
+                                            .fill(Color32::from_rgb(20, 25, 18))
+                                            .corner_radius(6.0)
+                                            .inner_margin(8.0)
+                                            .stroke(egui::Stroke::new(
+                                                1.0_f32,
+                                                if *success {
+                                                    Color32::from_rgb(40, 60, 35)
+                                                } else {
+                                                    Color32::from_rgb(80, 40, 35)
+                                                },
+                                            ))
+                                            .show(ui, |ui| {
+                                                ui.horizontal(|ui| {
+                                                    let icon = if *success { "✓" } else { "✗" };
+                                                    let icon_color = if *success { ACCENT } else { DANGER };
+                                                    ui.label(RichText::new(icon).color(icon_color).strong());
+                                                    ui.label(RichText::new(tool_name).monospace().small().strong().color(TEXT));
+                                                });
+                                                ui.label(RichText::new(detail).monospace().small().color(MUTED));
+                                            });
+                                        ui.add_space(4.0);
+                                    }
+                                });
                             }
                             if message.content.is_empty() {
                                 ui.add_space(12.0);
@@ -874,7 +965,7 @@ impl AiHelperApp {
                 self.next_id += 1;
                 self.task_input.clear();
                 self.log("INFO", "Task added");
-                self.save();
+                self.save_state();
             }
         });
         ui.add_space(12.0);
@@ -916,14 +1007,14 @@ impl AiHelperApp {
         });
         if let Some(id) = delete {
             self.tasks.retain(|task| task.id != id);
-            self.save();
+            self.save_state();
         }
         if task_changed {
-            self.save();
+            self.save_state();
         }
         if ui.button("Clear completed").clicked() {
             self.tasks.retain(|task| !task.done);
-            self.save();
+            self.save_state();
         }
     }
 
@@ -950,7 +1041,7 @@ impl AiHelperApp {
                 self.next_id += 1;
                 self.memory_input.clear();
                 self.log("INFO", "Memory saved; indexing in background");
-                self.save();
+                self.save_state();
                 let client = self.client.clone();
                 let events = self.events_tx.clone();
                 self.runtime.spawn(async move {
@@ -1024,7 +1115,7 @@ impl AiHelperApp {
         if let Some(id) = delete {
             self.memories.retain(|memory| memory.id != id);
             self.log("INFO", "Memory deleted");
-            self.save();
+            self.save_state();
         }
     }
 
@@ -1120,17 +1211,92 @@ impl AiHelperApp {
 
 impl eframe::App for AiHelperApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if ctx.input(|i| i.viewport().close_requested()) {
+            if !self.force_quit {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            }
+        }
+        if self.force_quit {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+        
+        while let Ok(msg) = self.ipc_rx.try_recv() {
+            self.input = msg;
+            self.send();
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        
+        if let Ok(_) = tray_icon::TrayIconEvent::receiver().try_recv() {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+        }
+        
         self.poll_events();
         if self.generating || matches!(self.connection, ConnectionStatus::Connecting) {
             ctx.request_repaint_after(Duration::from_millis(33));
         }
+        // Custom title bar
+        egui::TopBottomPanel::top("titlebar")
+            .exact_height(36.0)
+            .frame(egui::Frame::new().fill(Color32::from_rgb(12, 12, 14)).inner_margin(egui::Margin { left: 14, right: 8, top: 6, bottom: 6 }))
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("DP").strong().size(12.0).color(Color32::from_rgb(10, 10, 10)).background_color(ACCENT));
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("DeskPilot").strong().size(13.0).color(TEXT));
+                    // Draggable region
+                    let drag_rect = ui.available_rect_before_wrap();
+                    let drag_rect = egui::Rect::from_min_size(
+                        drag_rect.min,
+                        egui::vec2(drag_rect.width() - 120.0, drag_rect.height()),
+                    );
+                    let drag_response = ui.interact(drag_rect, ui.id().with("titlebar_drag"), egui::Sense::click_and_drag());
+                    if drag_response.dragged() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::StartDrag);
+                    }
+                    if drag_response.double_clicked() {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(
+                            !ctx.input(|i| i.viewport().maximized.unwrap_or(false))
+                        ));
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // Close
+                        let close_btn = egui::Button::new(RichText::new("✕").size(13.0).color(TEXT)).fill(Color32::TRANSPARENT).frame(false);
+                        if ui.add(close_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                        }
+                        ui.add_space(4.0);
+                        // Maximize
+                        let max_btn = egui::Button::new(RichText::new("□").size(13.0).color(MUTED)).fill(Color32::TRANSPARENT).frame(false);
+                        if ui.add(max_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(
+                                !ctx.input(|i| i.viewport().maximized.unwrap_or(false))
+                            ));
+                        }
+                        ui.add_space(4.0);
+                        // Minimize
+                        let min_btn = egui::Button::new(RichText::new("─").size(13.0).color(MUTED)).fill(Color32::TRANSPARENT).frame(false);
+                        if ui.add(min_btn).on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+                        }
+                    });
+                });
+            });
         egui::SidePanel::left("sidebar")
             .exact_width(240.0)
-            .frame(egui::Frame::new().fill(SIDEBAR).inner_margin(12.0))
+            .frame(egui::Frame::new()
+                .fill(SIDEBAR)
+                .inner_margin(12.0)
+                .stroke(egui::Stroke::new(1.0_f32, BORDER)))
             .show(ctx, |ui| self.sidebar(ui));
         egui::SidePanel::right("inspector")
             .exact_width(270.0)
-            .frame(egui::Frame::new().fill(SIDEBAR).inner_margin(14.0))
+            .frame(egui::Frame::new()
+                .fill(SIDEBAR)
+                .inner_margin(14.0)
+                .stroke(egui::Stroke::new(1.0_f32, BORDER)))
             .show(ctx, |ui| self.inspector(ui));
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(CANVAS).inner_margin(20.0))
@@ -1144,22 +1310,32 @@ impl eframe::App for AiHelperApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        self.save();
+        self.save_state();
     }
 }
 
 fn configure_style(ctx: &egui::Context) {
     ctx.set_theme(egui::Theme::Dark);
     let mut style = (*ctx.style()).clone();
-    style.spacing.item_spacing = egui::vec2(8.0, 8.0);
-    style.spacing.button_padding = egui::vec2(12.0, 7.0);
-    style.visuals.panel_fill = CANVAS;
-    style.visuals.window_fill = SURFACE;
-    style.visuals.extreme_bg_color = SURFACE;
-    style.visuals.widgets.inactive.bg_fill = SURFACE_HIGH;
-    style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(33, 41, 53);
-    style.visuals.widgets.active.bg_fill = Color32::from_rgb(43, 55, 68);
-    style.visuals.selection.bg_fill = Color32::from_rgb(68, 99, 49);
+    style.spacing.item_spacing = egui::vec2(12.0, 12.0);
+    style.spacing.button_padding = egui::vec2(16.0, 10.0);
+    style.visuals.panel_fill = Color32::from_rgb(18, 18, 20); // Deep Charcoal
+    style.visuals.window_fill = Color32::from_rgb(28, 28, 31); // Elevated Card
+    style.visuals.extreme_bg_color = Color32::from_rgb(28, 28, 31);
+    style.visuals.widgets.inactive.bg_fill = Color32::from_rgb(38, 38, 42);
+    style.visuals.widgets.inactive.corner_radius = egui::CornerRadius::same(12);
+    style.visuals.widgets.hovered.bg_fill = Color32::from_rgb(48, 48, 52);
+    style.visuals.widgets.hovered.corner_radius = egui::CornerRadius::same(12);
+    style.visuals.widgets.active.bg_fill = Color32::from_rgb(58, 58, 62);
+    style.visuals.widgets.active.corner_radius = egui::CornerRadius::same(12);
+    style.visuals.selection.bg_fill = Color32::from_rgb(57, 255, 20); // Neon Green Selection
+    style.visuals.window_corner_radius = egui::CornerRadius::same(16);
+    style.visuals.window_shadow = egui::epaint::Shadow {
+        offset: [0, 8],
+        blur: 16,
+        spread: 0,
+        color: Color32::from_black_alpha(80),
+    };
     ctx.set_style(style);
 }
 

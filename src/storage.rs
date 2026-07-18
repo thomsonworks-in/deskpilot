@@ -28,8 +28,24 @@ pub struct StoredLog {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Project {
+    pub id: u64,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Conversation {
+    pub id: u64,
+    pub project_id: u64,
+    pub title: String,
+    pub updated_at: i64,
+}
+
 #[derive(Debug, Default)]
 pub struct PersistedState {
+    pub projects: Vec<Project>,
+    pub conversations: Vec<Conversation>,
     pub messages: Vec<Message>,
     pub tasks: Vec<TaskItem>,
     pub memories: Vec<MemoryItem>,
@@ -65,22 +81,34 @@ impl Storage {
     }
 
     fn initialize(&self) -> Result<()> {
-        self.connection()?.execute_batch(
+        let conn = self.connection()?;
+        conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-             CREATE TABLE IF NOT EXISTS messages (position INTEGER PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL, thinking TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+             CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, title TEXT NOT NULL, updated_at INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, done INTEGER NOT NULL);
-             CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY, content TEXT NOT NULL, embedding TEXT NOT NULL DEFAULT '[]');
+             CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL DEFAULT 1, content TEXT NOT NULL, embedding TEXT NOT NULL DEFAULT '[]');
              CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL);"
         )?;
-        let _ = self.connection()?.execute(
-            "ALTER TABLE messages ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
-            [],
-        );
-        let _ = self.connection()?.execute(
-            "ALTER TABLE messages ADD COLUMN thinking TEXT NOT NULL DEFAULT ''",
-            [],
-        );
+        
+        let _ = conn.execute("INSERT OR IGNORE INTO projects (id, name) VALUES (1, 'Default Project')", []);
+        let _ = conn.execute("INSERT OR IGNORE INTO conversations (id, project_id, title, updated_at) VALUES (1, 1, 'Main Chat', 0)", []);
+
+        let schema: String = conn.query_row("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'", [], |row| row.get(0)).unwrap_or_default();
+        if schema.contains("position INTEGER PRIMARY KEY") {
+            conn.execute_batch("
+                ALTER TABLE messages RENAME TO messages_old;
+                CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL DEFAULT 1, position INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, thinking TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0);
+                INSERT INTO messages (conversation_id, position, role, content, thinking, created_at) SELECT 1, position, role, content, thinking, created_at FROM messages_old;
+                DROP TABLE messages_old;
+            ")?;
+        } else {
+            conn.execute("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL DEFAULT 1, position INTEGER NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, thinking TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0)", [])?;
+        }
+        
+        let _ = conn.execute("ALTER TABLE memories ADD COLUMN project_id INTEGER NOT NULL DEFAULT 1", []);
+        
         Ok(())
     }
 
@@ -103,19 +131,20 @@ impl Storage {
             .unwrap_or(false);
 
         let mut statement = connection.prepare(
-            "SELECT role, content, thinking, created_at FROM messages ORDER BY position",
+            "SELECT conversation_id, role, content, thinking, created_at FROM messages ORDER BY conversation_id, position",
         )?;
         let messages = statement
             .query_map([], |row| {
-                let role: String = row.get(0)?;
+                let conv_id: u64 = row.get(0)?;
+                let role: String = row.get(1)?;
                 let role = match role.as_str() {
                     "system" => Role::System,
                     "assistant" => Role::Assistant,
                     _ => Role::User,
                 };
-                let mut message = Message::new(role, row.get::<_, String>(1)?);
-                message.thinking = row.get(2)?;
-                message.created_at = row.get(3)?;
+                let mut message = Message::new(conv_id, role, row.get::<_, String>(2)?);
+                message.thinking = row.get(3)?;
+                message.created_at = row.get(4)?;
                 Ok(message)
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -144,7 +173,17 @@ impl Storage {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
+        let mut statement = connection.prepare("SELECT id, name FROM projects ORDER BY id")?;
+        let projects = statement.query_map([], |row| Ok(Project { id: row.get(0)?, name: row.get(1)? }))?.collect::<rusqlite::Result<Vec<_>>>()?;
+
+        let mut statement = connection.prepare("SELECT id, project_id, title, updated_at FROM conversations ORDER BY updated_at DESC")?;
+        let conversations = statement.query_map([], |row| Ok(Conversation {
+            id: row.get(0)?, project_id: row.get(1)?, title: row.get(2)?, updated_at: row.get(3)?
+        }))?.collect::<rusqlite::Result<Vec<_>>>()?;
+
         Ok(PersistedState {
+            projects,
+            conversations,
             messages,
             tasks,
             memories,
@@ -176,8 +215,6 @@ impl Storage {
         transaction.execute("INSERT INTO settings(key, value) VALUES('selected_model', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [&state.selected_model])?;
         transaction.execute("INSERT INTO settings(key, value) VALUES('high_thinking', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [state.high_thinking.to_string()])?;
         transaction.execute("DELETE FROM messages", [])?;
-        transaction.execute("DELETE FROM tasks", [])?;
-        transaction.execute("DELETE FROM memories", [])?;
         for (position, message) in state.messages.iter().enumerate() {
             let role = match message.role {
                 Role::System => "system",
@@ -185,16 +222,18 @@ impl Storage {
                 Role::Assistant => "assistant",
             };
             transaction.execute(
-                "INSERT INTO messages(position, role, content, thinking, created_at) VALUES(?1, ?2, ?3, ?4, ?5)",
-                params![position as i64, role, message.content, message.thinking, message.created_at],
+                "INSERT INTO messages(conversation_id, position, role, content, thinking, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+                params![message.conversation_id as i64, position as i64, role, message.content, message.thinking, message.created_at],
             )?;
         }
+        transaction.execute("DELETE FROM tasks", [])?;
         for task in &state.tasks {
             transaction.execute(
                 "INSERT INTO tasks(id, title, done) VALUES(?1, ?2, ?3)",
                 params![task.id as i64, task.title, task.done as i64],
             )?;
         }
+        transaction.execute("DELETE FROM memories", [])?;
         for memory in &state.memories {
             transaction.execute(
                 "INSERT INTO memories(id, content, embedding) VALUES(?1, ?2, ?3)",

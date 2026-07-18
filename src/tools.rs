@@ -6,6 +6,8 @@ use anyhow::{anyhow, Context, Result};
 use serde::Serialize;
 use tokio::process::Command;
 
+
+
 #[derive(Debug, Clone)]
 pub struct Skill {
     pub name: String,
@@ -82,6 +84,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
         definition("curl", "Make an HTTP GET request and return the response body. Use only when the user requests internet access.", serde_json::json!({"type":"object","required":["url"],"properties":{"url":{"type":"string"}}})),
         definition("powershell", "Run a non-destructive PowerShell command in the workspace.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})),
         definition("bash", "Run a non-destructive bash command in the workspace when bash is installed.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})),
+        definition("write_file", "Write text content to a file in the workspace, overwriting it. Path must be relative to workspace.", serde_json::json!({"type":"object","required":["path", "content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}})),
+        definition("git_commit", "Commit all current changes to git with a message.", serde_json::json!({"type":"object","required":["message"],"properties":{"message":{"type":"string"}}})),
+        definition("self_update", "Rebuild and restart the DeskPilot application.", serde_json::json!({"type":"object","properties":{}})),
     ]
 }
 
@@ -166,6 +171,24 @@ pub async fn execute(
             .await
         }
         "bash" => run_shell("bash", &["-lc"], required(arguments, "command")?, workspace).await,
+        "write_file" => {
+            let requested = required(arguments, "path")?;
+            let content = required(arguments, "content")?;
+            let path = safe_new_path(workspace, requested)?;
+            tokio::fs::write(&path, content).await.context("failed to write file")?;
+            Ok(format!("file {} written successfully", path.display()))
+        }
+        "git_commit" => {
+            let message = required(arguments, "message")?;
+            run_shell("git", &[], "add .", workspace).await?;
+            run_shell("git", &["commit", "-m"], message, workspace).await
+        }
+        "self_update" => {
+            let script_path = workspace.join("update.bat");
+            tokio::fs::write(&script_path, "@echo off\ntimeout /t 2 /nobreak >nul\ncargo run").await?;
+            Command::new("cmd").args(["/C", "start", "", script_path.to_str().unwrap()]).current_dir(workspace).spawn()?;
+            Ok("Restarting app...".to_owned())
+        }
         _ => Err(anyhow!("unknown tool: {name}")),
     }
 }
@@ -234,6 +257,21 @@ fn safe_path(workspace: &Path, requested: &str) -> Result<PathBuf> {
         return Err(anyhow!("path is outside the workspace"));
     }
     Ok(canonical)
+}
+
+fn safe_new_path(workspace: &Path, requested: &str) -> Result<PathBuf> {
+    let root = workspace.canonicalize()?;
+    let candidate = if Path::new(requested).is_absolute() {
+        PathBuf::from(requested)
+    } else {
+        root.join(requested)
+    };
+    let parent = candidate.parent().unwrap_or(Path::new(""));
+    let canonical_parent = parent.canonicalize().context("parent directory does not exist")?;
+    if !canonical_parent.starts_with(&root) {
+        return Err(anyhow!("path is outside the workspace"));
+    }
+    Ok(candidate)
 }
 
 fn limit(mut text: String, max: usize) -> String {

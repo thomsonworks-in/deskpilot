@@ -10,20 +10,26 @@ pub enum Role {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Message {
+    #[serde(default)]
+    pub conversation_id: u64,
     pub role: Role,
     pub content: String,
     #[serde(default)]
     pub thinking: String,
+    #[serde(default)]
+    pub tool_uses: Vec<(String, String, bool)>,
     #[serde(default, skip_serializing)]
     pub created_at: i64,
 }
 
 impl Message {
-    pub fn new(role: Role, content: impl Into<String>) -> Self {
+    pub fn new(conversation_id: u64, role: Role, content: impl Into<String>) -> Self {
         Self {
+            conversation_id,
             role,
             content: content.into(),
             thinking: String::new(),
+            tool_uses: Vec::new(),
             created_at: chrono::Utc::now().timestamp(),
         }
     }
