@@ -758,14 +758,65 @@ impl AiHelperApp {
 
     fn chat_view(&mut self, ui: &mut egui::Ui) {
         self.header(ui, "Chat", "Private conversations with your local models");
-        let height = (ui.available_height() - 100.0).max(160.0);
-        ui.allocate_ui_with_layout(
-            egui::vec2(ui.available_width(), height),
-            egui::Layout::top_down(egui::Align::Min),
-            |ui| {
+        let enter = ui.input(|input| input.key_pressed(egui::Key::Enter) && !input.modifiers.shift);
+        
+        ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+            ui.add_space(16.0);
+            
+            // Input Box
+            egui::Frame::new()
+                .fill(Color32::from_rgb(15, 18, 23)) // Very dark, modern input box
+                .corner_radius(24.0)
+                .inner_margin(egui::Margin::symmetric(20, 16))
+                .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(35, 42, 53)))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        let width = (ui.available_width() - 85.0).max(120.0);
+                        ui.add_sized(
+                            [width, 20.0],
+                            TextEdit::multiline(&mut self.input)
+                                .hint_text("Ask DeskPilot...")
+                                .frame(false)
+                                .desired_rows(1)
+                                .text_color(Color32::from_rgb(240, 245, 255)),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if self.generating {
+                                if ui.add_sized([70.0, 36.0], egui::Button::new(RichText::new("Stop").color(Color32::WHITE)).fill(Color32::from_rgb(180, 50, 60)).corner_radius(12.0)).clicked() {
+                                    self.stop();
+                                }
+                            } else {
+                                let can_send = !self.input.trim().is_empty() && !self.models.is_empty() && self.loading_model.is_none();
+                                let btn_color = if can_send { ACCENT } else { Color32::from_rgb(30, 35, 45) };
+                                let text_color = if can_send { Color32::BLACK } else { MUTED };
+                                if ui.add_enabled(
+                                    can_send,
+                                    egui::Button::new(RichText::new("Send").color(text_color).strong()).fill(btn_color).corner_radius(12.0),
+                                )
+                                .clicked()
+                                {
+                                    self.send();
+                                }
+                            }
+                        });
+                    });
+                });
+                
+            if enter && !self.generating {
+                while self.input.ends_with(['\r', '\n']) {
+                    self.input.pop();
+                }
+                self.send();
+            }
+
+            ui.add_space(12.0);
+            
+            // Messages Area
+            ui.with_layout(egui::Layout::top_down(egui::Align::Min), |ui| {
                 ScrollArea::vertical()
                     .id_salt("messages")
                     .stick_to_bottom(self.scroll_to_bottom)
+                    .auto_shrink([false, false])
                     .show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         let active_messages: Vec<_> = self.messages.iter().filter(|m| m.conversation_id == self.active_conversation).collect();
@@ -773,15 +824,17 @@ impl AiHelperApp {
                             ui.add_space(80.0);
                             ui.vertical_centered(|ui| {
                                 ui.label(
-                                    RichText::new("Your local copilot is ready")
-                                        .size(22.0)
+                                    RichText::new("How can I help you today?")
+                                        .size(28.0)
                                         .strong()
                                         .color(TEXT),
                                 );
+                                ui.add_space(8.0);
                                 ui.label(
                                     RichText::new(
                                         "Ask a question, plan work, or save knowledge for later.",
                                     )
+                                    .size(16.0)
                                     .color(MUTED),
                                 );
                             });
@@ -793,19 +846,19 @@ impl AiHelperApp {
                             {
                                 continue;
                             }
-                            let (name, fill) = if message.role == Role::User {
-                                ("You", BLUE)
+                            
+                            ui.add_space(20.0);
+                            
+                            let (name, icon_color, text_color) = if message.role == Role::User {
+                                ("You", BLUE, Color32::from_rgb(220, 225, 235))
                             } else {
-                                ("DeskPilot", SURFACE_HIGH)
+                                ("DeskPilot", ACCENT, TEXT)
                             };
+                            
                             ui.horizontal(|ui| {
-                                ui.label(RichText::new(name).small().strong().color(
-                                    if message.role == Role::User {
-                                        Color32::from_rgb(170, 196, 255)
-                                    } else {
-                                        ACCENT
-                                    },
-                                ));
+                                ui.label(RichText::new("●").color(icon_color).size(12.0));
+                                ui.add_space(4.0);
+                                ui.label(RichText::new(name).strong().color(TEXT));
                                 if message.created_at > 0 {
                                     ui.label(
                                         RichText::new(format_message_time(message.created_at))
@@ -814,28 +867,26 @@ impl AiHelperApp {
                                     );
                                 }
                             });
-                            // Thinking dropdown
-                            if message.role == Role::Assistant && !message.thinking.is_empty() {
-                                let is_active = self.generating
-                                    && last_active.is_some_and(|last| std::ptr::eq(message, last));
-                                let header_text = if is_active {
-                                    format!("⟳ Thinking...")
-                                } else {
-                                    let words = message.thinking.split_whitespace().count();
-                                    format!("💭 Reasoning ({words} words) ›")
-                                };
-                                egui::CollapsingHeader::new(
-                                    RichText::new(header_text).small().color(MUTED).italics(),
-                                )
-                                .default_open(is_active)
-                                .show(ui, |ui| {
-                                    egui::Frame::new()
-                                        .fill(Color32::from_rgb(22, 22, 28))
-                                        .corner_radius(8.0)
-                                        .inner_margin(12.0)
-                                        .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(40, 40, 50)))
+                            
+                            ui.add_space(8.0);
+                            
+                            ui.horizontal(|ui| {
+                                ui.add_space(24.0);
+                                ui.vertical(|ui| {
+                                    if message.role == Role::Assistant && !message.thinking.is_empty() {
+                                        let is_active = self.generating
+                                            && last_active.is_some_and(|last| std::ptr::eq(message, last));
+                                        let header_text = if is_active {
+                                            format!("⟳ Thinking...")
+                                        } else {
+                                            let words = message.thinking.split_whitespace().count();
+                                            format!("💭 Reasoning ({words} words) ›")
+                                        };
+                                        egui::CollapsingHeader::new(
+                                            RichText::new(header_text).small().color(MUTED).italics(),
+                                        )
+                                        .default_open(is_active)
                                         .show(ui, |ui| {
-                                            ui.set_max_width(ui.available_width() * 0.95);
                                             ui.label(
                                                 RichText::new(&message.thinking)
                                                     .monospace()
@@ -843,131 +894,74 @@ impl AiHelperApp {
                                                     .color(Color32::from_rgb(140, 140, 160)),
                                             );
                                         });
-                                });
-                            } else if message.role == Role::Assistant
-                                && message.content.is_empty()
-                                && message.tool_uses.is_empty()
-                                && self.generating
-                            {
-                                ui.label(
-                                    RichText::new(if self.high_thinking {
-                                        "⟳ Thinking..."
-                                    } else {
-                                        "Preparing a response..."
-                                    })
-                                    .italics()
-                                    .color(MUTED),
-                                );
-                            }
-                            // Tool usage dropdown
-                            if message.role == Role::Assistant && !message.tool_uses.is_empty() {
-                                let tool_count = message.tool_uses.len();
-                                let all_ok = message.tool_uses.iter().all(|(_, _, ok)| *ok);
-                                let is_active = self.generating
-                                    && last_active.is_some_and(|last| std::ptr::eq(message, last));
-                                let header_text = if is_active {
-                                    format!("⚙ Running tools ({tool_count})...")
-                                } else {
-                                    let icon = if all_ok { "✓" } else { "⚠" };
-                                    format!("{icon} Used {tool_count} tool{} ›", if tool_count == 1 { "" } else { "s" })
-                                };
-                                let header_color = if all_ok { ACCENT } else { Color32::from_rgb(255, 180, 80) };
-                                egui::CollapsingHeader::new(
-                                    RichText::new(header_text).small().strong().color(header_color),
-                                )
-                                .default_open(is_active)
-                                .show(ui, |ui| {
-                                    for (tool_name, detail, success) in &message.tool_uses {
-                                        egui::Frame::new()
-                                            .fill(Color32::from_rgb(20, 25, 18))
-                                            .corner_radius(6.0)
-                                            .inner_margin(8.0)
-                                            .stroke(egui::Stroke::new(
-                                                1.0_f32,
-                                                if *success {
-                                                    Color32::from_rgb(40, 60, 35)
-                                                } else {
-                                                    Color32::from_rgb(80, 40, 35)
-                                                },
-                                            ))
-                                            .show(ui, |ui| {
+                                        ui.add_space(8.0);
+                                    } else if message.role == Role::Assistant
+                                        && message.content.is_empty()
+                                        && message.tool_uses.is_empty()
+                                        && self.generating
+                                    {
+                                        ui.label(
+                                            RichText::new(if self.high_thinking {
+                                                "⟳ Thinking..."
+                                            } else {
+                                                "Preparing a response..."
+                                            })
+                                            .italics()
+                                            .color(MUTED),
+                                        );
+                                    }
+                                    
+                                    if message.role == Role::Assistant && !message.tool_uses.is_empty() {
+                                        let tool_count = message.tool_uses.len();
+                                        let all_ok = message.tool_uses.iter().all(|(_, _, ok)| *ok);
+                                        let is_active = self.generating
+                                            && last_active.is_some_and(|last| std::ptr::eq(message, last));
+                                        let header_text = if is_active {
+                                            format!("⚙ Running tools ({tool_count})...")
+                                        } else {
+                                            let icon = if all_ok { "✓" } else { "⚠" };
+                                            format!("{icon} Used {tool_count} tool{} ›", if tool_count == 1 { "" } else { "s" })
+                                        };
+                                        let header_color = if all_ok { Color32::from_rgb(100, 180, 120) } else { Color32::from_rgb(255, 180, 80) };
+                                        egui::CollapsingHeader::new(
+                                            RichText::new(header_text).small().strong().color(header_color),
+                                        )
+                                        .default_open(is_active)
+                                        .show(ui, |ui| {
+                                            for (tool_name, detail, success) in &message.tool_uses {
                                                 ui.horizontal(|ui| {
                                                     let icon = if *success { "✓" } else { "✗" };
-                                                    let icon_color = if *success { ACCENT } else { DANGER };
+                                                    let icon_color = if *success { Color32::from_rgb(100, 180, 120) } else { DANGER };
                                                     ui.label(RichText::new(icon).color(icon_color).strong());
                                                     ui.label(RichText::new(tool_name).monospace().small().strong().color(TEXT));
                                                 });
                                                 ui.label(RichText::new(detail).monospace().small().color(MUTED));
-                                            });
-                                        ui.add_space(4.0);
+                                                ui.add_space(4.0);
+                                            }
+                                        });
+                                        ui.add_space(8.0);
+                                    }
+                                    
+                                    if !message.content.is_empty() {
+                                        ui.set_max_width(ui.available_width() * 0.95);
+                                        if message.role == Role::Assistant {
+                                            ui.style_mut().url_in_tooltip = true;
+                                            CommonMarkViewer::new().show(
+                                                ui,
+                                                &mut self.markdown_cache,
+                                                &message.content,
+                                            );
+                                        } else {
+                                            ui.label(RichText::new(&message.content).color(text_color).size(15.0));
+                                        }
                                     }
                                 });
-                            }
-                            if message.content.is_empty() {
-                                ui.add_space(12.0);
-                                continue;
-                            }
-                            egui::Frame::new()
-                                .fill(fill)
-                                .corner_radius(9.0)
-                                .inner_margin(12.0)
-                                .show(ui, |ui| {
-                                    ui.set_max_width(ui.available_width() * 0.9);
-                                    if message.role == Role::Assistant {
-                                        ui.style_mut().url_in_tooltip = true;
-                                        CommonMarkViewer::new().show(
-                                            ui,
-                                            &mut self.markdown_cache,
-                                            &message.content,
-                                        );
-                                    } else {
-                                        ui.label(RichText::new(&message.content).color(TEXT));
-                                    }
-                                });
-                            ui.add_space(12.0);
+                            });
                         }
                     });
-            },
-        );
-        self.scroll_to_bottom = false;
-        ui.separator();
-        let enter = ui.input(|input| input.key_pressed(egui::Key::Enter) && !input.modifiers.shift);
-        ui.horizontal(|ui| {
-            let width = (ui.available_width() - 92.0).max(120.0);
-            ui.add_sized(
-                [width, 58.0],
-                TextEdit::multiline(&mut self.input)
-                    .hint_text("Ask DeskPilot...")
-                    .desired_rows(2),
-            );
-            if self.generating {
-                if ui
-                    .add_sized(
-                        [78.0, 38.0],
-                        egui::Button::new("Stop").fill(Color32::from_rgb(65, 31, 38)),
-                    )
-                    .clicked()
-                {
-                    self.stop();
-                }
-            } else if ui
-                .add_enabled(
-                    !self.input.trim().is_empty()
-                        && !self.models.is_empty()
-                        && self.loading_model.is_none(),
-                    egui::Button::new("Send"),
-                )
-                .clicked()
-            {
-                self.send();
-            }
+            });
         });
-        if enter && !self.generating {
-            while self.input.ends_with(['\r', '\n']) {
-                self.input.pop();
-            }
-            self.send();
-        }
+        self.scroll_to_bottom = false;
     }
 
     fn tasks_view(&mut self, ui: &mut egui::Ui) {
