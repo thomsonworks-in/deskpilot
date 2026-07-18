@@ -64,12 +64,26 @@ pub(crate) struct ChatChunk {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct ChatResponseMessage {
     pub role: String,
     pub content: String,
     #[serde(default)]
     pub thinking: String,
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCall>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ToolCall {
+    pub function: ToolCallFunction,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ToolCallFunction {
+    pub name: String,
+    #[serde(default)]
+    pub arguments: serde_json::Value,
 }
 
 #[derive(Serialize)]

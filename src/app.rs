@@ -2,12 +2,14 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use eframe::egui::{self, Color32, RichText, ScrollArea, TextEdit};
+use egui_commonmark::{CommonMarkCache, CommonMarkViewer};
 use tokio::runtime::Runtime;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::message::{Message, Role};
-use crate::ollama::{OllamaClient, StreamEvent};
+use crate::ollama::{OllamaClient, StreamEvent, ToolContext};
 use crate::storage::{MemoryItem, PersistedState, Storage, TaskItem};
+use crate::tools::{discover_skills, Skill};
 
 pub const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
 const DEFAULT_MODEL: &str = "qwen3.6:35b-a3b";
@@ -39,6 +41,7 @@ enum View {
     Tasks,
     Memory,
     Logs,
+    Skills,
 }
 
 struct LogEntry {
@@ -73,12 +76,18 @@ pub struct AiHelperApp {
     scroll_to_bottom: bool,
     active_task: Option<u64>,
     next_id: u64,
+    workspace: std::path::PathBuf,
+    skills: Vec<Skill>,
+    tool_activity: Vec<(String, String, bool)>,
+    markdown_cache: CommonMarkCache,
 }
 
 impl AiHelperApp {
     pub fn new(cc: &eframe::CreationContext<'_>, runtime: Arc<Runtime>) -> Self {
         configure_style(&cc.egui_ctx);
         let storage = Storage::new();
+        let workspace = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let skills = discover_skills(&workspace);
         let persisted = storage.load().unwrap_or_default();
         let next_id = persisted
             .tasks
@@ -148,6 +157,10 @@ impl AiHelperApp {
             scroll_to_bottom: true,
             active_task: None,
             next_id,
+            workspace,
+            skills,
+            tool_activity: Vec::new(),
+            markdown_cache: CommonMarkCache::default(),
         };
         app.log("INFO", "DeskPilot started; loading local Ollama models");
         app
@@ -299,6 +312,17 @@ impl AiHelperApp {
                     }
                 }
                 StreamEvent::Notice(message) => self.log("WARN", message),
+                StreamEvent::ToolActivity {
+                    name,
+                    detail,
+                    success,
+                } => {
+                    self.log(
+                        if success { "INFO" } else { "ERROR" },
+                        format!("Tool {name}: {detail}"),
+                    );
+                    self.tool_activity.push((name, detail, success));
+                }
             }
         }
     }
@@ -343,6 +367,8 @@ impl AiHelperApp {
         let query = input;
         let model = self.selected_model.clone();
         let high_thinking = self.high_thinking;
+        let workspace = self.workspace.clone();
+        let skills = self.skills.clone();
         let client = self.client.clone();
         let events = self.events_tx.clone();
         let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -369,8 +395,10 @@ impl AiHelperApp {
             };
             let memory_text = selected_memories.iter().map(|memory| format!("- {memory}")).collect::<Vec<_>>().join("\n");
             let task_text = open_tasks.iter().map(|task| format!("- {task}")).collect::<Vec<_>>().join("\n");
+            let skill_text = skills.iter().map(|skill| format!("- {}: {}", skill.name, skill.description)).collect::<Vec<_>>().join("\n");
             let mut contextual_history = vec![Message::new(Role::System, format!(
-                "You are DeskPilot, a private local assistant. Use relevant saved memory when helpful. Never claim a memory exists unless it appears below.\n\nRELEVANT MEMORY\n{}\n\nOPEN TASKS\n{}",
+                "You are DeskPilot, a private local assistant with local tools. Use tools when they provide evidence or are needed to complete the request. Never claim a command ran or a file changed unless its tool succeeded. Use read_skill before following a listed skill. Shell tools are workspace-scoped and reject destructive commands. Use relevant saved memory when helpful. Never claim a memory exists unless it appears below.\n\nAVAILABLE SKILLS\n{}\n\nRELEVANT MEMORY\n{}\n\nOPEN TASKS\n{}",
+                if skill_text.is_empty() { "None" } else { &skill_text },
                 if memory_text.is_empty() { "None" } else { &memory_text },
                 if task_text.is_empty() { "None" } else { &task_text },
             ))];
@@ -386,7 +414,7 @@ impl AiHelperApp {
                     )));
                 }
             }
-            if let Err(error) = client.stream_chat(&model, &contextual_history, &events, cancel_rx, high_thinking).await {
+            if let Err(error) = client.stream_chat(&model, &contextual_history, &events, cancel_rx, high_thinking, ToolContext { workspace: &workspace, skills: &skills }).await {
                 let _ = events.send(StreamEvent::Error(error.to_string()));
             }
         });
@@ -454,6 +482,7 @@ impl AiHelperApp {
             (View::Chat, "Chat"),
             (View::Tasks, "Tasks"),
             (View::Memory, "Memory"),
+            (View::Skills, "Skills"),
             (View::Logs, "Logs"),
         ] {
             let selected = self.view == view;
@@ -772,7 +801,16 @@ impl AiHelperApp {
                                 .inner_margin(12.0)
                                 .show(ui, |ui| {
                                     ui.set_max_width(ui.available_width() * 0.9);
-                                    ui.label(RichText::new(&message.content).color(TEXT));
+                                    if message.role == Role::Assistant {
+                                        ui.style_mut().url_in_tooltip = true;
+                                        CommonMarkViewer::new().show(
+                                            ui,
+                                            &mut self.markdown_cache,
+                                            &message.content,
+                                        );
+                                    } else {
+                                        ui.label(RichText::new(&message.content).color(TEXT));
+                                    }
                                 });
                             ui.add_space(12.0);
                         }
@@ -1035,6 +1073,49 @@ impl AiHelperApp {
             }
         });
     }
+
+    fn skills_view(&mut self, ui: &mut egui::Ui) {
+        self.header(
+            ui,
+            "Skills",
+            "Claude-compatible local SKILL.md instructions and agent tools",
+        );
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(format!("{} skills discovered", self.skills.len())).color(TEXT));
+            if ui.button("Reload").clicked() {
+                self.skills = discover_skills(&self.workspace);
+                self.log(
+                    "INFO",
+                    format!("Reloaded {} local skills", self.skills.len()),
+                );
+            }
+        });
+        ui.label(
+            RichText::new("Sources: .claude/skills, ~/.claude/skills, ~/.codex/skills")
+                .small()
+                .color(MUTED),
+        );
+        ui.add_space(12.0);
+        ScrollArea::vertical().show(ui, |ui| {
+            for skill in &self.skills {
+                egui::Frame::new()
+                    .fill(SURFACE)
+                    .corner_radius(8.0)
+                    .inner_margin(12.0)
+                    .show(ui, |ui| {
+                        ui.label(RichText::new(&skill.name).strong().color(ACCENT));
+                        ui.label(RichText::new(&skill.description).color(TEXT));
+                        ui.label(
+                            RichText::new(skill.path.display().to_string())
+                                .monospace()
+                                .small()
+                                .color(MUTED),
+                        );
+                    });
+                ui.add_space(8.0);
+            }
+        });
+    }
 }
 
 impl eframe::App for AiHelperApp {
@@ -1057,6 +1138,7 @@ impl eframe::App for AiHelperApp {
                 View::Chat => self.chat_view(ui),
                 View::Tasks => self.tasks_view(ui),
                 View::Memory => self.memory_view(ui),
+                View::Skills => self.skills_view(ui),
                 View::Logs => self.logs_view(ui),
             });
     }

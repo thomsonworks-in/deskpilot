@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
@@ -9,6 +10,7 @@ use crate::message::{
     ChatChunk, ChatOptions, ChatRequest, EmbedRequest, EmbedResponse, Message, OllamaTagsResponse,
     RunningModelsResponse,
 };
+use crate::tools::{self, Skill};
 
 #[derive(Debug)]
 pub enum StreamEvent {
@@ -17,19 +19,35 @@ pub enum StreamEvent {
     ThinkingDelta(String),
     ModelLoading(String),
     ModelReady(String),
-    ModelLoadFailed { model: String, error: String },
+    ModelLoadFailed {
+        model: String,
+        error: String,
+    },
     Finished,
     Cancelled,
     Error(String),
     ModelsLoaded(Vec<String>),
-    EmbeddingReady { memory_id: u64, embedding: Vec<f32> },
+    EmbeddingReady {
+        memory_id: u64,
+        embedding: Vec<f32>,
+    },
     Notice(String),
+    ToolActivity {
+        name: String,
+        detail: String,
+        success: bool,
+    },
 }
 
 #[derive(Clone)]
 pub struct OllamaClient {
     base_url: String,
     http: Client,
+}
+
+pub struct ToolContext<'a> {
+    pub workspace: &'a Path,
+    pub skills: &'a [Skill],
 }
 
 impl OllamaClient {
@@ -137,7 +155,13 @@ impl OllamaClient {
         events: &mpsc::UnboundedSender<StreamEvent>,
         mut cancel: oneshot::Receiver<()>,
         high_thinking: bool,
+        tools: ToolContext<'_>,
     ) -> Result<()> {
+        if !tools.skills.is_empty() {
+            return self
+                .agent_chat(model, messages, events, cancel, high_thinking, tools)
+                .await;
+        }
         let request = ChatRequest {
             model,
             messages,
@@ -218,6 +242,83 @@ impl OllamaClient {
                 }
             }
         }
+    }
+
+    async fn agent_chat(
+        &self,
+        model: &str,
+        messages: &[Message],
+        events: &mpsc::UnboundedSender<StreamEvent>,
+        mut cancel: oneshot::Receiver<()>,
+        high_thinking: bool,
+        tools: ToolContext<'_>,
+    ) -> Result<()> {
+        let mut history = messages
+            .iter()
+            .map(|message| serde_json::to_value(message).unwrap_or_default())
+            .collect::<Vec<_>>();
+        let definitions = tools::definitions();
+        let _ = events.send(StreamEvent::Started);
+        for _ in 0..8 {
+            let request = serde_json::json!({
+                "model": model,
+                "messages": history,
+                "stream": false,
+                "think": high_thinking,
+                "tools": definitions,
+            });
+            let response = tokio::select! {
+                _ = &mut cancel => { let _ = events.send(StreamEvent::Cancelled); return Ok(()); }
+                response = self.http.post(format!("{}/api/chat", self.base_url)).json(&request).send() => response.context("could not start Ollama tool chat")?,
+            };
+            let response = response_error(response, "tool chat request").await?;
+            let body: ChatChunk = response
+                .json()
+                .await
+                .context("invalid Ollama tool response")?;
+            let Some(message) = body.message else {
+                return Err(anyhow!("Ollama returned no assistant message"));
+            };
+            if !message.thinking.is_empty() {
+                let _ = events.send(StreamEvent::ThinkingDelta(message.thinking.clone()));
+            }
+            if message.tool_calls.is_empty() {
+                if !message.content.is_empty() {
+                    let _ = events.send(StreamEvent::ContentDelta(message.content));
+                }
+                let _ = events.send(StreamEvent::Finished);
+                return Ok(());
+            }
+            history.push(serde_json::json!({
+                "role": "assistant",
+                "content": message.content,
+                "thinking": message.thinking,
+                "tool_calls": message.tool_calls,
+            }));
+            for call in message.tool_calls {
+                let name = call.function.name;
+                let detail = call.function.arguments.to_string();
+                let result = tools::execute(
+                    &name,
+                    &call.function.arguments,
+                    tools.workspace,
+                    tools.skills,
+                )
+                .await;
+                let (content, success) = match result {
+                    Ok(output) => (output, true),
+                    Err(error) => (format!("Tool error: {error}"), false),
+                };
+                let _ = events.send(StreamEvent::ToolActivity {
+                    name: name.clone(),
+                    detail,
+                    success,
+                });
+                history
+                    .push(serde_json::json!({"role":"tool", "tool_name":name, "content":content}));
+            }
+        }
+        Err(anyhow!("agent reached the 8-step tool safety limit"))
     }
 }
 
