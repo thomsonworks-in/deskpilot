@@ -520,8 +520,8 @@ impl AiHelperApp {
                 // Icon-only view buttons
                 for (view, icon, tooltip) in [
                     (View::Chat, "💬", "Chat"),
-                    (View::Tasks, "✓", "Tasks"),
-                    (View::Memory, "🧠", "Memory"),
+                    (View::Tasks, "📋", "Tasks"),
+                    (View::Memory, "💾", "Memory"),
                     (View::Skills, "🛠", "Skills"),
                     (View::Logs, "📝", "Logs"),
                 ] {
@@ -581,8 +581,8 @@ impl AiHelperApp {
             
             for (view, icon, label) in [
                 (View::Chat, "💬", "Chat"),
-                (View::Tasks, "✓", "Tasks"),
-                (View::Memory, "🧠", "Memory"),
+                (View::Tasks, "📋", "Tasks"),
+                (View::Memory, "💾", "Memory"),
                 (View::Skills, "🛠", "Skills"),
                 (View::Logs, "📝", "Logs"),
             ] {
@@ -773,8 +773,7 @@ impl AiHelperApp {
                         if ui.add(egui::Button::new(RichText::new("+").strong().color(TEXT)).fill(Color32::from_rgb(30, 35, 45)).corner_radius(12.0)).clicked() {
                             // Add context logic placeholder
                         }
-                        
-                        ui.add(egui::Button::new(RichText::new("Worktree").small().color(MUTED)).fill(Color32::from_rgb(20, 24, 30)).corner_radius(12.0).stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(35, 42, 53))));
+
                         
                         // Model dropdown pill
                         let current_model = if self.models.is_empty() { "No models" } else { &self.selected_model };
@@ -1280,17 +1279,17 @@ impl eframe::App for AiHelperApp {
                     // Right-aligned modern window control buttons (46px wide each)
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         // Close
-                        if titlebar_button(ui, "✕", Color32::from_rgb(232, 17, 35), TEXT).clicked() {
+                        if titlebar_button(ui, "close", Color32::from_rgb(232, 17, 35), TEXT).clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
                         }
                         // Maximize
                         let is_max = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
-                        let max_symbol = if is_max { "❐" } else { "□" };
-                        if titlebar_button(ui, max_symbol, Color32::from_rgb(45, 50, 60), MUTED).clicked() {
+                        let max_type = if is_max { "restore" } else { "maximize" };
+                        if titlebar_button(ui, max_type, Color32::from_rgb(45, 50, 60), MUTED).clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Maximized(!is_max));
                         }
                         // Minimize
-                        if titlebar_button(ui, "─", Color32::from_rgb(45, 50, 60), MUTED).clicked() {
+                        if titlebar_button(ui, "minimize", Color32::from_rgb(45, 50, 60), MUTED).clicked() {
                             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
                         }
                     });
@@ -1436,21 +1435,75 @@ fn format_message_time(timestamp: i64) -> String {
         .unwrap_or_default()
 }
 
-fn titlebar_button(ui: &mut egui::Ui, text: &str, hover_bg: Color32, text_color: Color32) -> egui::Response {
+fn titlebar_button(ui: &mut egui::Ui, button_type: &str, hover_bg: Color32, stroke_color: Color32) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(egui::vec2(46.0, 36.0), egui::Sense::click());
     if ui.is_rect_visible(rect) {
         let is_hovered = response.hovered();
         let bg_color = if is_hovered { hover_bg } else { Color32::TRANSPARENT };
         ui.painter().rect_filled(rect, egui::CornerRadius::ZERO, bg_color);
         
-        let final_text_color = if is_hovered { Color32::WHITE } else { text_color };
-        ui.painter().text(
-            rect.center(),
-            egui::Align2::CENTER_CENTER,
-            text,
-            egui::FontId::proportional(12.0),
-            final_text_color
-        );
+        let final_stroke_color = if is_hovered { Color32::WHITE } else { stroke_color };
+        let stroke = egui::Stroke::new(1.0_f32, final_stroke_color);
+        let center = rect.center();
+        
+        match button_type {
+            "close" => {
+                let size = 4.0;
+                ui.painter().line_segment(
+                    [center + egui::vec2(-size, -size), center + egui::vec2(size, size)],
+                    stroke,
+                );
+                ui.painter().line_segment(
+                    [center + egui::vec2(-size, size), center + egui::vec2(size, -size)],
+                    stroke,
+                );
+            }
+            "maximize" => {
+                let size = 4.0;
+                let min = center + egui::vec2(-size, -size);
+                let max = center + egui::vec2(size, size);
+                ui.painter().rect_stroke(
+                    egui::Rect::from_min_max(min, max),
+                    egui::CornerRadius::ZERO,
+                    stroke,
+                    egui::StrokeKind::Outside
+                );
+            }
+            "restore" => {
+                // Two overlapping boxes
+                // Back box
+                let back_min = center + egui::vec2(-2.0, -4.0);
+                let back_max = center + egui::vec2(4.0, 2.0);
+                ui.painter().rect_stroke(
+                    egui::Rect::from_min_max(back_min, back_max),
+                    egui::CornerRadius::ZERO,
+                    stroke,
+                    egui::StrokeKind::Outside
+                );
+                // Front box (clear background behind it)
+                let front_min = center + egui::vec2(-4.0, -2.0);
+                let front_max = center + egui::vec2(2.0, 4.0);
+                ui.painter().rect_filled(
+                    egui::Rect::from_min_max(front_min, front_max),
+                    egui::CornerRadius::ZERO,
+                    bg_color,
+                );
+                ui.painter().rect_stroke(
+                    egui::Rect::from_min_max(front_min, front_max),
+                    egui::CornerRadius::ZERO,
+                    stroke,
+                    egui::StrokeKind::Outside
+                );
+            }
+            "minimize" => {
+                let size = 5.0;
+                ui.painter().line_segment(
+                    [center + egui::vec2(-size, 0.0), center + egui::vec2(size, 0.0)],
+                    stroke,
+                );
+            }
+            _ => {}
+        }
     }
     response
 }
