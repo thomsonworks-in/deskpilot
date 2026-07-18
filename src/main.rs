@@ -33,7 +33,8 @@ fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size(app::WINDOW_SIZE)
-            .with_min_inner_size(app::MIN_WINDOW_SIZE),
+            .with_min_inner_size(app::MIN_WINDOW_SIZE)
+            .with_decorations(false),
         ..Default::default()
     };
 
