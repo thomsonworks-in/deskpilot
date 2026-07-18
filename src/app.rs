@@ -556,13 +556,14 @@ impl AiHelperApp {
                 if title.is_empty() { title = "Empty Chat".to_string(); }
                 
                 ui.horizontal(|ui| {
-                    if ui.add_sized([185.0, 32.0], egui::Button::new(RichText::new(title).color(if is_active { ACCENT } else { TEXT })).fill(fill)).clicked() {
+                    ui.spacing_mut().item_spacing.x = 4.0;
+                    if ui.add_sized([183.0, 32.0], egui::Button::new(RichText::new(title).color(if is_active { ACCENT } else { TEXT })).fill(fill).truncate(true)).clicked() {
                         self.active_conversation = convo.id;
                         self.active_project = convo.project_id;
                         self.view = View::Chat;
                         self.save_state();
                     }
-                    if ui.add_sized([24.0, 32.0], egui::Button::new("×").fill(Color32::TRANSPARENT)).clicked() {
+                    if ui.add_sized([28.0, 32.0], egui::Button::new(RichText::new("×").color(MUTED)).fill(Color32::TRANSPARENT)).clicked() {
                         to_delete = Some(convo.id);
                     }
                 });
