@@ -86,6 +86,7 @@ pub struct AiHelperApp {
     skills: Vec<Skill>,
     markdown_cache: CommonMarkCache,
     force_quit: bool,
+    sidebar_collapsed: bool,
 }
 
 impl AiHelperApp {
@@ -179,6 +180,7 @@ impl AiHelperApp {
             skills,
             markdown_cache: CommonMarkCache::default(),
             force_quit: false,
+            sidebar_collapsed: false,
         };
         app.log("INFO", "DeskPilot started; loading local Ollama models");
         app
@@ -485,111 +487,164 @@ impl AiHelperApp {
 
     fn sidebar(&mut self, ui: &mut egui::Ui) {
         ui.add_space(8.0);
-        ui.horizontal(|ui| {
-            ui.label(
-                RichText::new("DP")
-                    .strong()
-                    .color(Color32::from_rgb(16, 22, 12))
-                    .background_color(ACCENT),
-            );
-            ui.label(RichText::new("DeskPilot").strong().size(17.0).color(TEXT));
-        });
-        ui.label(RichText::new("LOCAL ASSISTANT").small().color(MUTED));
-        ui.add_space(16.0);
-        if ui
-            .add_sized(
-                [215.0, 38.0],
-                egui::Button::new("+  New chat").fill(SURFACE_HIGH),
-            )
-            .clicked()
-        {
-            let new_id = self.conversations.iter().map(|c| c.id).max().unwrap_or(0) + 1;
-            self.conversations.push(Conversation {
-                id: new_id,
-                project_id: self.active_project,
-                title: "New Chat".to_owned(),
-                updated_at: 0,
-            });
-            self.active_conversation = new_id;
-            self.view = View::Chat;
-            self.log("INFO", "New conversation started");
-            self.save_state();
-        }
-        ui.add_space(14.0);
-        for (view, label) in [
-            (View::Chat, "Chat"),
-            (View::Tasks, "Tasks"),
-            (View::Memory, "Memory"),
-            (View::Skills, "Skills"),
-            (View::Logs, "Logs"),
-        ] {
-            let selected = self.view == view;
-            let button =
-                egui::Button::new(RichText::new(label).color(if selected { ACCENT } else { TEXT }))
-                    .fill(if selected {
-                        SURFACE_HIGH
-                    } else {
-                        Color32::TRANSPARENT
-                    })
-                    .stroke(egui::Stroke::new(
-                        1.0_f32,
-                        if selected {
-                            BORDER
-                        } else {
-                            Color32::TRANSPARENT
-                        },
-                    ));
-            if ui.add_sized([215.0, 36.0], button).clicked() {
-                self.view = view;
-            }
-        }
-        ui.add_space(18.0);
-        ui.label(RichText::new("CONVERSATIONS").small().strong().color(MUTED));
-        ui.add_space(6.0);
-        
-        let mut to_delete = None;
-        ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-            for convo in self.conversations.clone() {
-                let is_active = convo.id == self.active_conversation && self.view == View::Chat;
-                let fill = if is_active { SURFACE_HIGH } else { Color32::TRANSPARENT };
-                let mut title = truncate(&convo.title, 24);
-                if title.is_empty() { title = "Empty Chat".to_string(); }
+        if self.sidebar_collapsed {
+            // Collapsed layout (60px wide)
+            ui.vertical_centered(|ui| {
+                // Expand toggle button (hamburger style or ▶)
+                if ui.add(egui::Button::new(RichText::new("☰").size(16.0)).fill(Color32::TRANSPARENT)).clicked() {
+                    self.sidebar_collapsed = false;
+                }
                 
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    if ui.add_sized([183.0, 32.0], egui::Button::new(RichText::new(title).color(if is_active { ACCENT } else { TEXT })).fill(fill).truncate()).clicked() {
-                        self.active_conversation = convo.id;
-                        self.active_project = convo.project_id;
-                        self.view = View::Chat;
-                        self.save_state();
+                ui.add_space(20.0);
+                
+                // Circular "+" button for new chat
+                let btn = egui::Button::new(RichText::new("+").strong().size(14.0))
+                    .fill(SURFACE_HIGH)
+                    .corner_radius(16.0);
+                if ui.add_sized([32.0, 32.0], btn).clicked() {
+                    let new_id = self.conversations.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                    self.conversations.push(Conversation {
+                        id: new_id,
+                        project_id: self.active_project,
+                        title: "New Chat".to_owned(),
+                        updated_at: 0,
+                    });
+                    self.active_conversation = new_id;
+                    self.view = View::Chat;
+                    self.log("INFO", "New conversation started");
+                    self.save_state();
+                }
+                
+                ui.add_space(20.0);
+                
+                // Icon-only view buttons
+                for (view, icon, tooltip) in [
+                    (View::Chat, "💬", "Chat"),
+                    (View::Tasks, "✓", "Tasks"),
+                    (View::Memory, "🧠", "Memory"),
+                    (View::Skills, "🛠", "Skills"),
+                    (View::Logs, "📝", "Logs"),
+                ] {
+                    let selected = self.view == view;
+                    let fill = if selected { SURFACE_HIGH } else { Color32::TRANSPARENT };
+                    let stroke = egui::Stroke::new(1.0_f32, if selected { BORDER } else { Color32::TRANSPARENT });
+                    let btn = egui::Button::new(RichText::new(icon).size(14.0).color(if selected { ACCENT } else { TEXT }))
+                        .fill(fill)
+                        .stroke(stroke)
+                        .corner_radius(8.0);
+                    if ui.add_sized([36.0, 36.0], btn).on_hover_text(tooltip).clicked() {
+                        self.view = view;
                     }
-                    if ui.add_sized([28.0, 32.0], egui::Button::new(RichText::new("×").color(MUTED)).fill(Color32::TRANSPARENT)).clicked() {
-                        to_delete = Some(convo.id);
+                    ui.add_space(8.0);
+                }
+            });
+        } else {
+            // Expanded layout (240px wide)
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("DP")
+                        .strong()
+                        .color(Color32::from_rgb(16, 22, 12))
+                        .background_color(ACCENT),
+                );
+                ui.label(RichText::new("DeskPilot").strong().size(17.0).color(TEXT));
+                
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.add(egui::Button::new(RichText::new("◀").size(11.0)).fill(Color32::TRANSPARENT)).clicked() {
+                        self.sidebar_collapsed = true;
                     }
                 });
+            });
+            ui.label(RichText::new("LOCAL ASSISTANT").small().color(MUTED));
+            ui.add_space(16.0);
+            
+            if ui
+                .add_sized(
+                    [215.0, 38.0],
+                    egui::Button::new("+  New chat").fill(SURFACE_HIGH),
+                )
+                .clicked()
+            {
+                let new_id = self.conversations.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                self.conversations.push(Conversation {
+                    id: new_id,
+                    project_id: self.active_project,
+                    title: "New Chat".to_owned(),
+                    updated_at: 0,
+                });
+                self.active_conversation = new_id;
+                self.view = View::Chat;
+                self.log("INFO", "New conversation started");
+                self.save_state();
             }
-        });
-        if let Some(id) = to_delete {
-            self.conversations.retain(|c| c.id != id);
-            self.messages.retain(|m| m.conversation_id != id);
-            if self.active_conversation == id {
-                self.active_conversation = self.conversations.first().map(|c| c.id).unwrap_or(1);
+            ui.add_space(14.0);
+            
+            for (view, icon, label) in [
+                (View::Chat, "💬", "Chat"),
+                (View::Tasks, "✓", "Tasks"),
+                (View::Memory, "🧠", "Memory"),
+                (View::Skills, "🛠", "Skills"),
+                (View::Logs, "📝", "Logs"),
+            ] {
+                let selected = self.view == view;
+                let btn = egui::Button::new(RichText::new(format!("{icon}  {label}")).color(if selected { ACCENT } else { TEXT }))
+                    .fill(if selected { SURFACE_HIGH } else { Color32::TRANSPARENT })
+                    .stroke(egui::Stroke::new(1.0_f32, if selected { BORDER } else { Color32::TRANSPARENT }));
+                if ui.add_sized([215.0, 36.0], btn).clicked() {
+                    self.view = view;
+                }
             }
-            self.save_state();
+            ui.add_space(18.0);
+            ui.label(RichText::new("CONVERSATIONS").small().strong().color(MUTED));
+            ui.add_space(6.0);
+            
+            let mut to_delete = None;
+            ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                for convo in self.conversations.clone() {
+                    let is_active = convo.id == self.active_conversation && self.view == View::Chat;
+                    let fill = if is_active { SURFACE_HIGH } else { Color32::TRANSPARENT };
+                    let mut title = truncate(&convo.title, 24);
+                    if title.is_empty() { title = "Empty Chat".to_string(); }
+                    
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        if ui.add_sized([183.0, 32.0], egui::Button::new(RichText::new(title).color(if is_active { ACCENT } else { TEXT })).fill(fill).truncate()).clicked() {
+                            self.active_conversation = convo.id;
+                            self.active_project = convo.project_id;
+                            self.view = View::Chat;
+                            self.save_state();
+                        }
+                        if ui.add_sized([28.0, 32.0], egui::Button::new(RichText::new("×").color(MUTED)).fill(Color32::TRANSPARENT)).clicked() {
+                            to_delete = Some(convo.id);
+                        }
+                    });
+                }
+            });
+            if let Some(id) = to_delete {
+                self.conversations.retain(|c| c.id != id);
+                self.messages.retain(|m| m.conversation_id != id);
+                if self.active_conversation == id {
+                    self.active_conversation = self.conversations.first().map(|c| c.id).unwrap_or(1);
+                }
+                self.save_state();
+            }
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                let done = self.tasks.iter().filter(|task| task.done).count();
+                ui.label(
+                    RichText::new(format!(
+                        "{} memories  |  {done}/{} tasks",
+                        self.memories.len(),
+                        self.tasks.len()
+                    ))
+                    .small()
+                    .color(MUTED),
+                );
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Private by default").small().color(ACCENT));
+                });
+            });
         }
-        ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-            let done = self.tasks.iter().filter(|task| task.done).count();
-            ui.label(
-                RichText::new(format!(
-                    "{} memories  |  {done}/{} tasks",
-                    self.memories.len(),
-                    self.tasks.len()
-                ))
-                .small()
-                .color(MUTED),
-            );
-            ui.label(RichText::new("Private by default").small().color(ACCENT));
-        });
     }
 
     fn inspector(&mut self, ui: &mut egui::Ui) {
@@ -1242,11 +1297,12 @@ impl eframe::App for AiHelperApp {
                 });
             });
 
+        let sidebar_width = if self.sidebar_collapsed { 60.0 } else { 240.0 };
         egui::SidePanel::left("sidebar")
-            .exact_width(240.0)
+            .exact_width(sidebar_width)
             .frame(egui::Frame::new()
                 .fill(SIDEBAR)
-                .inner_margin(12.0)
+                .inner_margin(if self.sidebar_collapsed { egui::Margin::symmetric(4, 12) } else { egui::Margin::symmetric(12, 12) })
                 .stroke(egui::Stroke::new(1.0_f32, BORDER)))
             .show(ctx, |ui| self.sidebar(ui));
 
