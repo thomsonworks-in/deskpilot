@@ -818,32 +818,46 @@ impl AiHelperApp {
                     ui.add_space(20.0);
                     
                     if message.role == Role::User {
-                        // Modern User Card
-                        egui::Frame::new()
-                            .fill(Color32::from_rgb(22, 26, 33))
-                            .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(45, 52, 64)))
-                            .corner_radius(16.0)
-                            .inner_margin(egui::Margin::symmetric(16, 16))
-                            .show(ui, |ui| {
-                                ui.set_width(ui.available_width());
-                                ui.label(RichText::new(&message.content).color(Color32::from_rgb(220, 225, 235)).size(15.0));
+                        // Modern right-aligned user slate card
+                        ui.horizontal(|ui| {
+                            ui.add_space(ui.available_width() * 0.25); // Push to right, occupying max 75% width
+                            ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
+                                egui::Frame::new()
+                                    .fill(Color32::from_rgb(30, 41, 59)) // Modern dark slate
+                                    .stroke(egui::Stroke::new(1.0_f32, Color32::from_rgb(51, 65, 85)))
+                                    .corner_radius(16.0)
+                                    .inner_margin(egui::Margin::symmetric(14, 12))
+                                    .show(ui, |ui| {
+                                        ui.label(RichText::new(&message.content).color(Color32::WHITE).size(14.5));
+                                    });
                             });
-                    } else {
-                        // Assistant Flat Layout
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("●").color(ACCENT).size(12.0));
-                            ui.add_space(4.0);
-                            ui.label(RichText::new("DeskPilot").strong().color(TEXT));
-                            if message.created_at > 0 {
-                                ui.label(RichText::new(format_message_time(message.created_at)).small().color(MUTED));
-                            }
                         });
-                        
-                        ui.add_space(8.0);
-                        
-                        ui.horizontal(|ui| {
-                            ui.add_space(24.0);
+                    } else {
+                        // Two-column flat assistant layout
+                        ui.horizontal_top(|ui| {
+                            // Circular DeskPilot avatar badge
+                            let (avatar_text, bg_color, text_color) = ("DP", ACCENT, Color32::BLACK);
+                            let (rect, _) = ui.allocate_exact_size(egui::vec2(28.0, 28.0), egui::Sense::hover());
+                            ui.painter().circle_filled(rect.center(), 14.0, bg_color);
+                            ui.painter().text(
+                                rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                avatar_text,
+                                egui::FontId::proportional(11.0),
+                                text_color,
+                            );
+                            
+                            ui.add_space(12.0);
+                            
                             ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(RichText::new("DeskPilot").strong().color(TEXT));
+                                    if message.created_at > 0 {
+                                        ui.label(RichText::new(format_message_time(message.created_at)).small().color(MUTED));
+                                    }
+                                });
+                                ui.add_space(6.0);
+                                
                                 if !message.thinking.is_empty() {
                                     let is_active = self.generating && last_active.is_some_and(|last| std::ptr::eq(message, last));
                                     let header_text = if is_active { format!("⟳ Thinking...") } else { let words = message.thinking.split_whitespace().count(); format!("💭 Reasoning ({words} words) ›") };
