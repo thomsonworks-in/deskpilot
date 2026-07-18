@@ -852,7 +852,7 @@ impl AiHelperApp {
             .stick_to_bottom(self.scroll_to_bottom)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                ui.set_width(ui.available_width());
+                ui.set_width(ui.available_width().max(0.0));
                 let active_messages: Vec<_> = self.messages.iter().filter(|m| m.conversation_id == self.active_conversation).collect();
                 if active_messages.is_empty() {
                     ui.add_space(80.0);
@@ -874,7 +874,7 @@ impl AiHelperApp {
                     if message.role == Role::User {
                         // Modern right-aligned user slate card
                         ui.horizontal(|ui| {
-                            ui.add_space(ui.available_width() * 0.25); // Push to right, occupying max 75% width
+                            ui.add_space((ui.available_width() * 0.25).max(0.0)); // Push to right, occupying max 75% width
                             ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
                                 egui::Frame::new()
                                     .fill(Color32::from_rgb(30, 41, 59)) // Modern dark slate
@@ -965,7 +965,7 @@ impl AiHelperApp {
         self.header(ui, "Tasks", "Track what you and DeskPilot are working on");
         ui.horizontal(|ui| {
             ui.add_sized(
-                [ui.available_width() - 100.0, 34.0],
+                [(ui.available_width() - 100.0).max(0.0), 34.0],
                 TextEdit::singleline(&mut self.task_input).hint_text("Add a task..."),
             );
             if ui.button("Add task").clicked() && !self.task_input.trim().is_empty() {
@@ -1038,7 +1038,7 @@ impl AiHelperApp {
         );
         ui.horizontal(|ui| {
             ui.add_sized(
-                [ui.available_width() - 116.0, 34.0],
+                [(ui.available_width() - 116.0).max(0.0), 34.0],
                 TextEdit::singleline(&mut self.memory_input)
                     .hint_text("Save a preference, fact, or decision..."),
             );
@@ -1075,7 +1075,7 @@ impl AiHelperApp {
         });
         ui.add_space(8.0);
         ui.add_sized(
-            [ui.available_width(), 30.0],
+            [ui.available_width().max(0.0), 30.0],
             TextEdit::singleline(&mut self.memory_search).hint_text("Search memories..."),
         );
         ui.add_space(10.0);
