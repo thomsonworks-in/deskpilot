@@ -6,7 +6,7 @@ use reqwest::Client;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::message::{
-    ChatChunk, ChatRequest, EmbedRequest, EmbedResponse, Message, OllamaTagsResponse,
+    ChatChunk, ChatOptions, ChatRequest, EmbedRequest, EmbedResponse, Message, OllamaTagsResponse,
     RunningModelsResponse,
 };
 
@@ -16,6 +16,8 @@ pub enum StreamEvent {
     ContentDelta(String),
     ThinkingDelta(String),
     ModelLoading(String),
+    ModelReady(String),
+    ModelLoadFailed { model: String, error: String },
     Finished,
     Cancelled,
     Error(String),
@@ -98,18 +100,50 @@ impl OllamaClient {
             .any(|running| running.name == model || running.name.starts_with(&format!("{model}:"))))
     }
 
+    pub async fn load_model(&self, model: &str) -> Result<()> {
+        let response = self
+            .http
+            .post(format!("{}/api/generate", self.base_url))
+            .json(&serde_json::json!({ "model": model, "keep_alive": -1, "stream": false }))
+            .send()
+            .await
+            .context("could not request model load")?;
+        match response_error(response, "model load").await {
+            Ok(_) => {}
+            Err(error) if is_cuda_runner_failure(&error) => {
+                let response = self
+                    .http
+                    .post(format!("{}/api/generate", self.base_url))
+                    .json(&serde_json::json!({
+                        "model": model,
+                        "keep_alive": -1,
+                        "stream": false,
+                        "options": { "num_gpu": 0, "num_ctx": 4096 }
+                    }))
+                    .send()
+                    .await
+                    .context("could not request CPU model load after CUDA failed")?;
+                response_error(response, "CPU model load after CUDA failed").await?;
+            }
+            Err(error) => return Err(error),
+        }
+        Ok(())
+    }
+
     pub async fn stream_chat(
         &self,
         model: &str,
         messages: &[Message],
         events: &mpsc::UnboundedSender<StreamEvent>,
         mut cancel: oneshot::Receiver<()>,
+        high_thinking: bool,
     ) -> Result<()> {
         let request = ChatRequest {
             model,
             messages,
             stream: true,
-            think: true,
+            think: high_thinking,
+            options: None,
         };
         let response = self
             .http
@@ -118,9 +152,30 @@ impl OllamaClient {
             .send()
             .await
             .context("could not start Ollama chat")?;
-        let response = response
-            .error_for_status()
-            .context("Ollama chat request failed")?;
+        let response = match response_error(response, "chat request").await {
+            Ok(response) => response,
+            Err(error) if is_cuda_runner_failure(&error) => {
+                let _ = events.send(StreamEvent::Notice(
+                    "Ollama's CUDA runner crashed; retrying this model on CPU".to_owned(),
+                ));
+                let cpu_request = ChatRequest {
+                    options: Some(ChatOptions {
+                        num_gpu: 0,
+                        num_ctx: 4096,
+                    }),
+                    ..request
+                };
+                let response = self
+                    .http
+                    .post(format!("{}/api/chat", self.base_url))
+                    .json(&cpu_request)
+                    .send()
+                    .await
+                    .context("could not retry Ollama chat on CPU")?;
+                response_error(response, "CPU chat retry after CUDA failed").await?
+            }
+            Err(error) => return Err(error),
+        };
         let _ = events.send(StreamEvent::Started);
 
         let mut bytes = response.bytes_stream();
@@ -164,6 +219,33 @@ impl OllamaClient {
             }
         }
     }
+}
+
+fn is_cuda_runner_failure(error: &anyhow::Error) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("cuda error")
+        || message.contains("shared object initialization failed")
+        || message.contains("llama-server process has terminated")
+}
+
+async fn response_error(response: reqwest::Response, operation: &str) -> Result<reqwest::Response> {
+    if response.status().is_success() {
+        return Ok(response);
+    }
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    let detail = serde_json::from_str::<serde_json::Value>(&body)
+        .ok()
+        .and_then(|value| {
+            value
+                .get("error")
+                .and_then(|error| error.as_str())
+                .map(str::to_owned)
+        })
+        .unwrap_or(body);
+    Err(anyhow!(
+        "Ollama {operation} failed (HTTP {status}): {detail}"
+    ))
 }
 
 fn process_line(

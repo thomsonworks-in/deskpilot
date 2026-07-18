@@ -12,6 +12,8 @@ pub enum Role {
 pub struct Message {
     pub role: Role,
     pub content: String,
+    #[serde(default)]
+    pub thinking: String,
     #[serde(default, skip_serializing)]
     pub created_at: i64,
 }
@@ -21,6 +23,7 @@ impl Message {
         Self {
             role,
             content: content.into(),
+            thinking: String::new(),
             created_at: chrono::Utc::now().timestamp(),
         }
     }
@@ -42,6 +45,14 @@ pub(crate) struct ChatRequest<'a> {
     pub messages: &'a [Message],
     pub stream: bool,
     pub think: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub options: Option<ChatOptions>,
+}
+
+#[derive(Clone, Copy, Serialize)]
+pub(crate) struct ChatOptions {
+    pub num_gpu: u32,
+    pub num_ctx: u32,
 }
 
 #[derive(Debug, Deserialize)]

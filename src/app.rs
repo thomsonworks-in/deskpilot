@@ -67,9 +67,9 @@ pub struct AiHelperApp {
     connection: ConnectionStatus,
     view: View,
     generating: bool,
-    thinking: String,
-    thinking_expanded: bool,
+    high_thinking: bool,
     loading_model: Option<String>,
+    model_error: Option<String>,
     scroll_to_bottom: bool,
     active_task: Option<u64>,
     next_id: u64,
@@ -142,9 +142,9 @@ impl AiHelperApp {
             connection: ConnectionStatus::Connecting,
             view: View::Chat,
             generating: false,
-            thinking: String::new(),
-            thinking_expanded: true,
+            high_thinking: persisted.high_thinking,
             loading_model: None,
+            model_error: None,
             scroll_to_bottom: true,
             active_task: None,
             next_id,
@@ -177,6 +177,7 @@ impl AiHelperApp {
             tasks: self.tasks.clone(),
             memories: self.memories.clone(),
             selected_model: self.selected_model.clone(),
+            high_thinking: self.high_thinking,
         };
         if let Err(error) = self.storage.save(&state) {
             self.log("ERROR", format!("Could not save local state: {error}"));
@@ -188,6 +189,7 @@ impl AiHelperApp {
             match event {
                 StreamEvent::Started => {
                     self.loading_model = None;
+                    self.model_error = None;
                     self.log("INFO", "Ollama response stream started");
                 }
                 StreamEvent::ContentDelta(delta) => {
@@ -197,12 +199,25 @@ impl AiHelperApp {
                     self.scroll_to_bottom = true;
                 }
                 StreamEvent::ThinkingDelta(delta) => {
-                    self.thinking.push_str(&delta);
+                    if let Some(message) = self.messages.last_mut() {
+                        message.thinking.push_str(&delta);
+                    }
                     self.scroll_to_bottom = true;
                 }
                 StreamEvent::ModelLoading(model) => {
                     self.loading_model = Some(model.clone());
                     self.log("INFO", format!("Loading model {model} into memory"));
+                }
+                StreamEvent::ModelReady(model) => {
+                    self.loading_model = None;
+                    self.model_error = None;
+                    self.log("INFO", format!("Model {model} loaded and ready"));
+                    self.save();
+                }
+                StreamEvent::ModelLoadFailed { model, error } => {
+                    self.loading_model = None;
+                    self.model_error = Some(error.clone());
+                    self.log("ERROR", format!("Could not load {model}: {error}"));
                 }
                 StreamEvent::Finished => {
                     self.generating = false;
@@ -290,7 +305,11 @@ impl AiHelperApp {
 
     fn send(&mut self) {
         let input = self.input.trim().to_owned();
-        if input.is_empty() || self.generating || self.models.is_empty() {
+        if input.is_empty()
+            || self.generating
+            || self.loading_model.is_some()
+            || self.models.is_empty()
+        {
             return;
         }
         let task_title = format!("Respond to: {}", truncate(&input, 72));
@@ -306,8 +325,6 @@ impl AiHelperApp {
         self.messages.push(Message::new(Role::Assistant, ""));
         self.input.clear();
         self.generating = true;
-        self.thinking.clear();
-        self.thinking_expanded = true;
         self.scroll_to_bottom = true;
         self.log(
             "INFO",
@@ -325,6 +342,7 @@ impl AiHelperApp {
             .collect::<Vec<_>>();
         let query = input;
         let model = self.selected_model.clone();
+        let high_thinking = self.high_thinking;
         let client = self.client.clone();
         let events = self.events_tx.clone();
         let (cancel_tx, cancel_rx) = oneshot::channel();
@@ -368,7 +386,7 @@ impl AiHelperApp {
                     )));
                 }
             }
-            if let Err(error) = client.stream_chat(&model, &contextual_history, &events, cancel_rx).await {
+            if let Err(error) = client.stream_chat(&model, &contextual_history, &events, cancel_rx, high_thinking).await {
                 let _ = events.send(StreamEvent::Error(error.to_string()));
             }
         });
@@ -378,6 +396,32 @@ impl AiHelperApp {
         if let Some(cancel) = self.cancel_tx.take() {
             let _ = cancel.send(());
         }
+    }
+
+    fn switch_model(&mut self, previous: String, next: String) {
+        if previous == next {
+            return;
+        }
+        self.loading_model = Some(next.clone());
+        self.model_error = None;
+        self.log("INFO", format!("Switching model from {previous} to {next}"));
+        self.save();
+        let client = self.client.clone();
+        let events = self.events_tx.clone();
+        self.runtime.spawn(async move {
+            let _ = events.send(StreamEvent::ModelLoading(next.clone()));
+            match client.load_model(&next).await {
+                Ok(()) => {
+                    let _ = events.send(StreamEvent::ModelReady(next));
+                }
+                Err(error) => {
+                    let _ = events.send(StreamEvent::ModelLoadFailed {
+                        model: next,
+                        error: error.to_string(),
+                    });
+                }
+            }
+        });
     }
 
     fn sidebar(&mut self, ui: &mut egui::Ui) {
@@ -485,14 +529,20 @@ impl AiHelperApp {
         ui.add_space(12.0);
         ui.separator();
         inspector_label(ui, "MODEL");
-        egui::ComboBox::from_id_salt("inspector_model")
-            .selected_text(&self.selected_model)
-            .width(230.0)
-            .show_ui(ui, |ui| {
-                for model in &self.models {
-                    ui.selectable_value(&mut self.selected_model, model.clone(), model);
-                }
-            });
+        let previous_model = self.selected_model.clone();
+        ui.add_enabled_ui(!self.generating && self.loading_model.is_none(), |ui| {
+            egui::ComboBox::from_id_salt("inspector_model")
+                .selected_text(&self.selected_model)
+                .width(230.0)
+                .show_ui(ui, |ui| {
+                    for model in &self.models {
+                        ui.selectable_value(&mut self.selected_model, model.clone(), model);
+                    }
+                });
+        });
+        if previous_model != self.selected_model {
+            self.switch_model(previous_model, self.selected_model.clone());
+        }
         let model_status = if let Some(model) = &self.loading_model {
             format!("Loading {model}...")
         } else if self.generating {
@@ -508,6 +558,31 @@ impl AiHelperApp {
                 } else {
                     MUTED
                 }),
+        );
+        if let Some(error) = &self.model_error {
+            ui.label(RichText::new(truncate(error, 180)).small().color(DANGER));
+        }
+        inspector_label(ui, "THINKING");
+        ui.add_enabled_ui(!self.generating, |ui| {
+            ui.horizontal(|ui| {
+                if ui.selectable_label(!self.high_thinking, "Fast").clicked() {
+                    self.high_thinking = false;
+                    self.save();
+                }
+                if ui.selectable_label(self.high_thinking, "High").clicked() {
+                    self.high_thinking = true;
+                    self.save();
+                }
+            });
+        });
+        ui.label(
+            RichText::new(if self.high_thinking {
+                "Extended reasoning for harder work"
+            } else {
+                "Faster replies without extended reasoning"
+            })
+            .small()
+            .color(MUTED),
         );
         ui.add_space(18.0);
         ui.separator();
@@ -622,7 +697,9 @@ impl AiHelperApp {
                             });
                         }
                         for message in &self.messages {
-                            if message.role == Role::System || message.content.is_empty() {
+                            if message.role == Role::System
+                                || (message.content.is_empty() && message.thinking.is_empty())
+                            {
                                 continue;
                             }
                             let (name, fill) = if message.role == Role::User {
@@ -646,6 +723,49 @@ impl AiHelperApp {
                                     );
                                 }
                             });
+                            if message.role == Role::Assistant && !message.thinking.is_empty() {
+                                egui::CollapsingHeader::new(
+                                    if self.generating
+                                        && std::ptr::eq(message, self.messages.last().unwrap())
+                                    {
+                                        "Thinking..."
+                                    } else {
+                                        "Reasoning"
+                                    },
+                                )
+                                .default_open(false)
+                                .show(ui, |ui| {
+                                    egui::Frame::new()
+                                        .fill(SURFACE)
+                                        .corner_radius(7.0)
+                                        .inner_margin(10.0)
+                                        .show(ui, |ui| {
+                                            ui.label(
+                                                RichText::new(&message.thinking)
+                                                    .monospace()
+                                                    .small()
+                                                    .color(MUTED),
+                                            );
+                                        });
+                                });
+                            } else if message.role == Role::Assistant
+                                && message.content.is_empty()
+                                && self.generating
+                            {
+                                ui.label(
+                                    RichText::new(if self.high_thinking {
+                                        "Thinking..."
+                                    } else {
+                                        "Preparing a response..."
+                                    })
+                                    .italics()
+                                    .color(MUTED),
+                                );
+                            }
+                            if message.content.is_empty() {
+                                ui.add_space(12.0);
+                                continue;
+                            }
                             egui::Frame::new()
                                 .fill(fill)
                                 .corner_radius(9.0)
@@ -655,36 +775,6 @@ impl AiHelperApp {
                                     ui.label(RichText::new(&message.content).color(TEXT));
                                 });
                             ui.add_space(12.0);
-                        }
-                        if self.generating || !self.thinking.is_empty() {
-                            egui::CollapsingHeader::new(if self.generating {
-                                "Thinking..."
-                            } else {
-                                "Reasoning"
-                            })
-                            .default_open(self.thinking_expanded)
-                            .show(ui, |ui| {
-                                if self.thinking.is_empty() {
-                                    ui.label(
-                                        RichText::new("Preparing a response...")
-                                            .italics()
-                                            .color(MUTED),
-                                    );
-                                } else {
-                                    egui::Frame::new()
-                                        .fill(SURFACE)
-                                        .corner_radius(7.0)
-                                        .inner_margin(10.0)
-                                        .show(ui, |ui| {
-                                            ui.label(
-                                                RichText::new(&self.thinking)
-                                                    .monospace()
-                                                    .small()
-                                                    .color(MUTED),
-                                            );
-                                        });
-                                }
-                            });
                         }
                     });
             },
@@ -712,7 +802,9 @@ impl AiHelperApp {
                 }
             } else if ui
                 .add_enabled(
-                    !self.input.trim().is_empty() && !self.models.is_empty(),
+                    !self.input.trim().is_empty()
+                        && !self.models.is_empty()
+                        && self.loading_model.is_none(),
                     egui::Button::new("Send"),
                 )
                 .clicked()

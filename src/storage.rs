@@ -34,6 +34,7 @@ pub struct PersistedState {
     pub tasks: Vec<TaskItem>,
     pub memories: Vec<MemoryItem>,
     pub selected_model: String,
+    pub high_thinking: bool,
 }
 
 pub struct Storage {
@@ -67,13 +68,17 @@ impl Storage {
         self.connection()?.execute_batch(
             "PRAGMA journal_mode=WAL;
              CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-             CREATE TABLE IF NOT EXISTS messages (position INTEGER PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL, created_at INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE IF NOT EXISTS messages (position INTEGER PRIMARY KEY, role TEXT NOT NULL, content TEXT NOT NULL, thinking TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT 0);
              CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, done INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY, content TEXT NOT NULL, embedding TEXT NOT NULL DEFAULT '[]');
              CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL);"
         )?;
         let _ = self.connection()?.execute(
             "ALTER TABLE messages ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+            [],
+        );
+        let _ = self.connection()?.execute(
+            "ALTER TABLE messages ADD COLUMN thinking TEXT NOT NULL DEFAULT ''",
             [],
         );
         Ok(())
@@ -88,9 +93,18 @@ impl Storage {
                 |row| row.get(0),
             )
             .unwrap_or_default();
+        let high_thinking = connection
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'high_thinking'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .map(|value| value == "true")
+            .unwrap_or(false);
 
-        let mut statement = connection
-            .prepare("SELECT role, content, created_at FROM messages ORDER BY position")?;
+        let mut statement = connection.prepare(
+            "SELECT role, content, thinking, created_at FROM messages ORDER BY position",
+        )?;
         let messages = statement
             .query_map([], |row| {
                 let role: String = row.get(0)?;
@@ -100,7 +114,8 @@ impl Storage {
                     _ => Role::User,
                 };
                 let mut message = Message::new(role, row.get::<_, String>(1)?);
-                message.created_at = row.get(2)?;
+                message.thinking = row.get(2)?;
+                message.created_at = row.get(3)?;
                 Ok(message)
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -134,6 +149,7 @@ impl Storage {
             tasks,
             memories,
             selected_model,
+            high_thinking,
         })
     }
 
@@ -158,6 +174,7 @@ impl Storage {
         let mut connection = self.connection()?;
         let transaction = connection.transaction()?;
         transaction.execute("INSERT INTO settings(key, value) VALUES('selected_model', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [&state.selected_model])?;
+        transaction.execute("INSERT INTO settings(key, value) VALUES('high_thinking', ?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [state.high_thinking.to_string()])?;
         transaction.execute("DELETE FROM messages", [])?;
         transaction.execute("DELETE FROM tasks", [])?;
         transaction.execute("DELETE FROM memories", [])?;
@@ -168,8 +185,8 @@ impl Storage {
                 Role::Assistant => "assistant",
             };
             transaction.execute(
-                "INSERT INTO messages(position, role, content, created_at) VALUES(?1, ?2, ?3, ?4)",
-                params![position as i64, role, message.content, message.created_at],
+                "INSERT INTO messages(position, role, content, thinking, created_at) VALUES(?1, ?2, ?3, ?4, ?5)",
+                params![position as i64, role, message.content, message.thinking, message.created_at],
             )?;
         }
         for task in &state.tasks {
