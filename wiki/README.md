@@ -16,6 +16,7 @@ Welcome to the DeskPilot project wiki. This wiki documents the design, architect
 | 08 | [Verification Plan](./08-verification-plan.md) | Manual test checklist, build verification, error handling tests |
 | 09 | [Implementation Order](./09-implementation-order.md) | Step-by-step build sequence with file creation order |
 | 10 | [Risks & Mitigations](./10-risks-mitigations.md) | Known risks and how they're addressed |
+| 11 | [Adaptive Memory & Harness](./11-adaptive-memory-harness.md) | 4-Layer memory spec, tool safety boundaries, and skill discovery |
 
 ## Quick Links
 

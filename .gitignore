@@ -11,3 +11,18 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# Binaries and Installers
+*.exe
+*.zip
+*.tar.gz
+delegate.py
+build.bat
+
+# Local context and secrets
+project_context.md
+.env
+.env.*
+*.db
+*.sqlite
+*.sqlite3

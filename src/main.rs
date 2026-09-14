@@ -13,9 +13,7 @@ use std::sync::Arc;
 use app::AiHelperApp;
 
 fn main() -> eframe::Result<()> {
-    let Some(instance_guard) = single_instance::acquire_or_focus() else {
-        return Ok(());
-    };
+    let instance_guard = single_instance::acquire_or_focus();
     let runtime = Arc::new(
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -32,9 +30,11 @@ fn main() -> eframe::Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_title("DeskPilot")
             .with_inner_size(app::WINDOW_SIZE)
             .with_min_inner_size(app::MIN_WINDOW_SIZE)
-            .with_decorations(false),
+            .with_decorations(true)
+            .with_visible(true),
         ..Default::default()
     };
 

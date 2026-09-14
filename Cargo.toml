@@ -3,6 +3,9 @@ name = "deskpilot"
 version = "0.1.0"
 edition = "2021"
 description = "A private, local-first desktop assistant powered by Ollama"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/thomsonworks-in/deskpilot"
+readme = "README.md"
 
 [dependencies]
 eframe = { version = "0.31", features = ["default"] }
@@ -22,3 +25,6 @@ single-instance = "0.3"
 windows-sys = { version = "0.59", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
+tray-icon = "0.19"
+axum = "0.7"
+tokio-stream = "0.1"

@@ -38,8 +38,9 @@ enum ConnectionStatus {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum View {
     Chat,
-    Logs,
     Skills,
+    Logs,
+    Settings,
 }
 
 struct LogEntry {
@@ -87,6 +88,16 @@ pub struct AiHelperApp {
     sidebar_collapsed: bool,
     show_add_project_dialog: bool,
     new_project_name: String,
+    show_pull_dialog: bool,
+    pull_model_input: String,
+    pull_status: Option<String>,
+    pull_progress: Option<(u64, u64)>,
+    cloud_providers: Vec<crate::message::ProviderConfig>,
+    active_provider: String,
+    control_api_url: String,
+    openrouter_key: String,
+    openrouter_model: String,
+    settings_saved_notice: Option<String>,
 }
 
 impl AiHelperApp {
@@ -183,8 +194,57 @@ impl AiHelperApp {
             sidebar_collapsed: false,
             show_add_project_dialog: false,
             new_project_name: String::new(),
+            show_pull_dialog: false,
+            pull_model_input: String::new(),
+            pull_status: None,
+            pull_progress: None,
+            cloud_providers: Vec::new(),
+            active_provider: "Local Ollama".to_owned(),
+            control_api_url: "http://127.0.0.1:8000".to_owned(),
+            openrouter_key: String::new(),
+            openrouter_model: "anthropic/claude-3.7-sonnet".to_owned(),
+            settings_saved_notice: None,
         };
-        app.log("INFO", "DeskPilot started; loading local Ollama models");
+
+        // Load persisted OpenRouter settings
+        if let Ok(Some(key)) = app.storage.get_setting("openrouter_key") {
+            app.openrouter_key = key;
+        } else if let Ok(env_key) = std::env::var("OPENROUTER_API_KEY") {
+            app.openrouter_key = env_key;
+        }
+        if let Ok(Some(model)) = app.storage.get_setting("openrouter_model") {
+            app.openrouter_model = model;
+        }
+        if let Ok(Some(provider)) = app.storage.get_setting("active_provider") {
+            app.active_provider = provider;
+        }
+
+        // Register default OpenRouter cloud provider
+        app.cloud_providers.push(crate::message::ProviderConfig {
+            name: "OpenRouter".to_owned(),
+            base_url: "https://openrouter.ai/api/v1".to_owned(),
+            models: vec![
+                "anthropic/claude-3.7-sonnet".to_owned(),
+                "deepseek/deepseek-r1".to_owned(),
+                "deepseek/deepseek-chat".to_owned(),
+                "openai/gpt-4o".to_owned(),
+                "meta-llama/llama-3.3-70b-instruct".to_owned(),
+                "google/gemini-2.0-flash-001".to_owned(),
+            ],
+            api_key: if app.openrouter_key.is_empty() { None } else { Some(app.openrouter_key.clone()) },
+        });
+
+        // Bootstrap providers from Control server in background
+        let bootstrap_client = app.client.clone();
+        let bootstrap_events = app.events_tx.clone();
+        let control_url = app.control_api_url.clone();
+        app.runtime.spawn(async move {
+            if let Ok(providers) = bootstrap_client.fetch_control_providers(&control_url).await {
+                let _ = bootstrap_events.send(StreamEvent::ProvidersLoaded(providers));
+            }
+        });
+
+        app.log("INFO", "DeskPilot started with Adaptive Memory & Tool Harness");
         app
     }
 
@@ -255,6 +315,27 @@ impl AiHelperApp {
                     self.loading_model = None;
                     self.model_error = Some(error.clone());
                     self.log("ERROR", format!("Could not load {model}: {error}"));
+                }
+                StreamEvent::PullProgress { status, completed, total } => {
+                    self.pull_status = Some(status);
+                    if total > 0 {
+                        self.pull_progress = Some((completed, total));
+                    }
+                }
+                StreamEvent::PullFinished(model) => {
+                    self.pull_status = Some(format!("Downloaded {model}"));
+                    self.pull_progress = None;
+                    let reload_client = self.client.clone();
+                    let reload_events = self.events_tx.clone();
+                    self.runtime.spawn(async move {
+                        if let Ok(models) = reload_client.list_models().await {
+                            let _ = reload_events.send(StreamEvent::ModelsLoaded(models));
+                        }
+                    });
+                }
+                StreamEvent::ProvidersLoaded(providers) => {
+                    self.log("INFO", format!("Loaded {} providers from Control API", providers.len()));
+                    self.cloud_providers = providers;
                 }
                 StreamEvent::Finished => {
                     self.generating = false;
@@ -408,6 +489,10 @@ impl AiHelperApp {
         let (cancel_tx, cancel_rx) = oneshot::channel();
         self.cancel_tx = Some(cancel_tx);
         let active_conversation = self.active_conversation;
+        let active_project = self.active_project;
+        let active_provider = self.active_provider.clone();
+        let cloud_providers = self.cloud_providers.clone();
+        let adaptive_memory = self.storage.get_adaptive_context(active_project);
         self.runtime.spawn(async move {
             let has_indexed_memory = memories.iter().any(|memory| !memory.embedding.is_empty());
             let selected_memories = if has_indexed_memory {
@@ -432,12 +517,33 @@ impl AiHelperApp {
             let task_text = open_tasks.iter().map(|task| format!("- {task}")).collect::<Vec<_>>().join("\n");
             let skill_text = skills.iter().map(|skill| format!("- {}: {}", skill.name, skill.description)).collect::<Vec<_>>().join("\n");
             let mut contextual_history = vec![Message::new(active_conversation, Role::System, format!(
-                "You are DeskPilot, a private local assistant with local tools. Use tools when they provide evidence or are needed to complete the request. Never claim a command ran or a file changed unless its tool succeeded. Use read_skill before following a listed skill. Shell tools are workspace-scoped and reject destructive commands. Use relevant saved memory when helpful. Never claim a memory exists unless it appears below.\n\nAVAILABLE SKILLS\n{}\n\nRELEVANT MEMORY\n{}\n\nOPEN TASKS\n{}",
+                "You are DeskPilot, an elite native autonomous coding & research agent equipped with local tools. When asked about current information, news, models, documentation, or online data, ALWAYS use the `web_search` or `curl` tool to retrieve real-time facts instead of giving knowledge cutoff disclaimers. Use `powershell` for shell commands and `read_file`/`write_file` for files. Maintain O(1) memory awareness.\n\nAVAILABLE SKILLS\n{}\n\nRELEVANT MEMORY\n{}\n\nOPEN TASKS\n{}{}",
                 if skill_text.is_empty() { "None" } else { &skill_text },
                 if memory_text.is_empty() { "None" } else { &memory_text },
                 if task_text.is_empty() { "None" } else { &task_text },
+                adaptive_memory
             ))];
             contextual_history.extend(history);
+
+            if active_provider != "Local Ollama" {
+                if let Some(provider) = cloud_providers.iter().find(|p| p.name == active_provider) {
+                    let api_key = provider.api_key.as_deref().unwrap_or("sk-local");
+                    let _ = client.stream_cloud_chat(
+                        &provider.base_url,
+                        api_key,
+                        &model,
+                        &contextual_history,
+                        &events,
+                        cancel_rx,
+                        ToolContext {
+                            workspace: &workspace,
+                            skills: &skills,
+                        },
+                    ).await;
+                    return;
+                }
+            }
+
             match client.is_model_loaded(&model).await {
                 Ok(false) => {
                     let _ = events.send(StreamEvent::ModelLoading(model.clone()));
@@ -524,6 +630,7 @@ impl AiHelperApp {
                     (View::Chat, "💬", "Chat"),
                     (View::Skills, "🛠", "Skills"),
                     (View::Logs, "📝", "Logs"),
+                    (View::Settings, "⚙", "Settings & API Keys"),
                 ] {
                     let selected = self.view == view;
                     let fill = if selected { SURFACE_HIGH } else { Color32::TRANSPARENT };
@@ -558,44 +665,6 @@ impl AiHelperApp {
             ui.label(RichText::new("LOCAL ASSISTANT").small().color(MUTED));
             ui.add_space(14.0);
 
-            // Project Selector Section
-            ui.horizontal(|ui| {
-                ui.label(RichText::new("📁 Project:").small().color(MUTED));
-                let active_project_name = self.projects.iter().find(|p| p.id == self.active_project).map(|p| p.name.clone()).unwrap_or_else(|| "Default".to_owned());
-                let previous_project = self.active_project;
-                egui::ComboBox::from_id_salt("project_selector")
-                    .selected_text(RichText::new(active_project_name).small().color(TEXT))
-                    .width(115.0)
-                    .show_ui(ui, |ui| {
-                        for project in &self.projects {
-                            ui.selectable_value(&mut self.active_project, project.id, &project.name);
-                        }
-                    });
-                if previous_project != self.active_project {
-                    // Update active conversation to the first matching one
-                    if let Some(convo) = self.conversations.iter().find(|c| c.project_id == self.active_project) {
-                        self.active_conversation = convo.id;
-                    } else {
-                        // Create a default Main Chat conversation for this project
-                        let new_id = self.conversations.iter().map(|c| c.id).max().unwrap_or(0) + 1;
-                        self.conversations.push(Conversation {
-                            id: new_id,
-                            project_id: self.active_project,
-                            title: "Main Chat".to_owned(),
-                            updated_at: 0,
-                        });
-                        self.active_conversation = new_id;
-                    }
-                    self.view = View::Chat;
-                    self.save_state();
-                }
-                
-                if ui.button("+").on_hover_text("Add Project").clicked() {
-                    self.show_add_project_dialog = true;
-                }
-            });
-            ui.add_space(12.0);
-            
             if ui
                 .add_sized(
                     [215.0, 38.0],
@@ -621,6 +690,7 @@ impl AiHelperApp {
                 (View::Chat, "💬", "Chat"),
                 (View::Skills, "🛠", "Skills"),
                 (View::Logs, "📝", "Logs"),
+                (View::Settings, "⚙", "Settings"),
             ] {
                 let selected = self.view == view;
                 let (rect, response) = ui.allocate_exact_size(egui::vec2(215.0, 36.0), egui::Sense::click());
@@ -646,45 +716,98 @@ impl AiHelperApp {
                 }
             }
             ui.add_space(18.0);
-            ui.label(RichText::new("CONVERSATIONS").small().strong().color(MUTED));
+            
+            // Header for PROJECTS & CONVERSATIONS
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("PROJECTS").small().strong().color(MUTED));
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let btn_plus = egui::Button::new(RichText::new("+").strong().color(MUTED)).fill(Color32::TRANSPARENT);
+                    if ui.add(btn_plus).on_hover_text("Add Project").clicked() {
+                        self.show_add_project_dialog = true;
+                    }
+                });
+            });
             ui.add_space(6.0);
             
-            // Only show conversations matching the active project
-            let project_convos: Vec<_> = self.conversations
-                .iter()
-                .filter(|c| c.project_id == self.active_project)
-                .cloned()
-                .collect();
-                
-            ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                for convo in project_convos {
-                    let is_active = convo.id == self.active_conversation && self.view == View::Chat;
-                    let mut title = truncate(&convo.title, 24);
-                    if title.is_empty() { title = "Empty Chat".to_string(); }
+            // Hierarchical Projects and Conversations ScrollArea
+            ScrollArea::vertical().max_height(250.0).show(ui, |ui| {
+                ui.set_width(ui.available_width().max(0.0));
+                let projects = self.projects.clone();
+                for project in projects {
+                    let is_active_project = project.id == self.active_project;
                     
-                    let (rect, response) = ui.allocate_exact_size(egui::vec2(215.0, 32.0), egui::Sense::click());
-                    let is_hovered = response.hovered();
-                    let bg_color = if is_active { SURFACE_HIGH } else if is_hovered { Color32::from_rgb(25, 30, 40) } else { Color32::TRANSPARENT };
-                    ui.painter().rect_filled(rect, 8.0, bg_color);
-                    if is_active {
-                        ui.painter().rect_stroke(rect, 8.0, egui::Stroke::new(1.0_f32, BORDER), egui::StrokeKind::Outside);
-                    }
+                    // Project Row
+                    let (p_rect, p_response) = ui.allocate_exact_size(egui::vec2(215.0, 30.0), egui::Sense::click());
+                    let p_hovered = p_response.hovered();
+                    let p_bg = if is_active_project { Color32::from_rgb(25, 30, 40) } else if p_hovered { Color32::from_rgb(20, 24, 32) } else { Color32::TRANSPARENT };
+                    ui.painter().rect_filled(p_rect, 6.0, p_bg);
                     
-                    let text_pos = rect.left_center() + egui::vec2(12.0, 0.0);
+                    let p_text_pos = p_rect.left_center() + egui::vec2(8.0, 0.0);
                     ui.painter().text(
-                        text_pos,
+                        p_text_pos,
                         egui::Align2::LEFT_CENTER,
-                        title,
-                        egui::FontId::proportional(14.0),
-                        if is_active { ACCENT } else { TEXT }
+                        format!("📁 {}", project.name),
+                        egui::FontId::proportional(13.0),
+                        if is_active_project { TEXT } else { MUTED }
                     );
                     
-                    if response.clicked() {
-                        self.active_conversation = convo.id;
-                        self.active_project = convo.project_id;
+                    if p_response.clicked() {
+                        self.active_project = project.id;
+                        // Select first conversation in this project
+                        if let Some(convo) = self.conversations.iter().find(|c| c.project_id == project.id) {
+                            self.active_conversation = convo.id;
+                        } else {
+                            // Create default conversation if none exist
+                            let new_id = self.conversations.iter().map(|c| c.id).max().unwrap_or(0) + 1;
+                            self.conversations.push(Conversation {
+                                id: new_id,
+                                project_id: project.id,
+                                title: "Main Chat".to_owned(),
+                                updated_at: 0,
+                            });
+                            self.active_conversation = new_id;
+                        }
                         self.view = View::Chat;
                         self.save_state();
                     }
+                    
+                    // Conversations indented under project
+                    let project_convos: Vec<_> = self.conversations
+                        .iter()
+                        .filter(|c| c.project_id == project.id)
+                        .cloned()
+                        .collect();
+                        
+                    for convo in project_convos {
+                        let is_active_convo = convo.id == self.active_conversation && self.view == View::Chat;
+                        let mut title = truncate(&convo.title, 22);
+                        if title.is_empty() { title = "Empty Chat".to_string(); }
+                        
+                        let (c_rect, c_response) = ui.allocate_exact_size(egui::vec2(215.0, 26.0), egui::Sense::click());
+                        let c_hovered = c_response.hovered();
+                        let c_bg = if is_active_convo { SURFACE_HIGH } else if c_hovered { Color32::from_rgb(20, 25, 35) } else { Color32::TRANSPARENT };
+                        ui.painter().rect_filled(c_rect, 6.0, c_bg);
+                        if is_active_convo {
+                            ui.painter().rect_stroke(c_rect, 6.0, egui::Stroke::new(1.0_f32, BORDER), egui::StrokeKind::Outside);
+                        }
+                        
+                        let c_text_pos = c_rect.left_center() + egui::vec2(24.0, 0.0);
+                        ui.painter().text(
+                            c_text_pos,
+                            egui::Align2::LEFT_CENTER,
+                            title,
+                            egui::FontId::proportional(12.0),
+                            if is_active_convo { ACCENT } else { MUTED }
+                        );
+                        
+                        if c_response.clicked() {
+                            self.active_conversation = convo.id;
+                            self.active_project = convo.project_id;
+                            self.view = View::Chat;
+                            self.save_state();
+                        }
+                    }
+                    ui.add_space(4.0);
                 }
             });
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
@@ -860,23 +983,120 @@ impl AiHelperApp {
                         ui.spacing_mut().button_padding = egui::vec2(10.0, 6.0);
                         ui.spacing_mut().item_spacing.x = 8.0;
 
-                        // Left side: context pills
+                        // Left side: context pills & download button
                         let btn_plus = egui::Button::new(RichText::new("+").strong().color(TEXT))
                             .fill(Color32::from_rgb(30, 35, 45))
                             .corner_radius(15.0);
-                        if ui.add_sized([30.0, 30.0], btn_plus).clicked() {
+                        if ui.add_sized([30.0, 30.0], btn_plus).on_hover_text("Add Context").clicked() {
                             // Add context logic placeholder
                         }
 
-                        // Model dropdown pill
-                        let current_model = if self.models.is_empty() { "No models" } else { &self.selected_model };
-                        let previous_model = self.selected_model.clone();
-                        egui::ComboBox::from_id_salt("model_dropdown")
-                            .selected_text(RichText::new(format!("🤖 {}", current_model)).small().color(MUTED))
+                        let btn_pull = egui::Button::new(RichText::new("⬇").strong().color(ACCENT))
+                            .fill(Color32::from_rgb(30, 35, 45))
+                            .corner_radius(15.0);
+                        if ui.add_sized([30.0, 30.0], btn_pull).on_hover_text("Download / Pull Model").clicked() {
+                            self.show_pull_dialog = !self.show_pull_dialog;
+                        }
+
+                        // Provider / Harness Switcher Dropdown
+                        let current_provider = self.active_provider.clone();
+                        egui::ComboBox::from_id_salt("provider_dropdown")
+                            .selected_text(RichText::new(format!("🌐 {}", self.active_provider)).small().color(ACCENT))
                             .width(130.0)
                             .show_ui(ui, |ui| {
-                                for model in &self.models {
-                                    ui.selectable_value(&mut self.selected_model, model.clone(), model);
+                                if ui.selectable_label(self.active_provider == "Local Ollama", "🖥 Local Ollama").clicked() {
+                                    self.active_provider = "Local Ollama".to_owned();
+                                    let _ = self.storage.set_setting("active_provider", "Local Ollama");
+                                }
+                                for p in &self.cloud_providers {
+                                    let is_active = self.active_provider == p.name;
+                                    let icon = if p.name.contains("OpenRouter") { "⚡" } else { "☁" };
+                                    if ui.selectable_label(is_active, format!("{icon} {}", p.name)).clicked() {
+                                        self.active_provider = p.name.clone();
+                                        let _ = self.storage.set_setting("active_provider", &p.name);
+                                    }
+                                }
+                            });
+
+                        // Model dropdown pill
+                        let current_model = if self.active_provider != "Local Ollama" {
+                            if self.selected_model.is_empty() { "anthropic/claude-3.7-sonnet" } else { &self.selected_model }
+                        } else if self.models.is_empty() {
+                            "No models"
+                        } else {
+                            &self.selected_model
+                        };
+                        let mode_suffix = if current_model.contains("gemma") {
+                            " (Fast) ⚡"
+                        } else if current_model.contains("ornith") || current_model.contains("llama") {
+                            " (Thinking) 💡"
+                        } else if self.models.is_empty() {
+                            ""
+                        } else {
+                            " (Medium) ⚙"
+                        };
+                        let selected_btn_text = format!("🤖 {}{}", current_model, mode_suffix);
+                        
+                        let models = if self.active_provider == "Local Ollama" {
+                            self.models.clone()
+                        } else if let Some(p) = self.cloud_providers.iter().find(|p| p.name == self.active_provider) {
+                            p.models.clone()
+                        } else {
+                            vec!["anthropic/claude-3.7-sonnet".to_owned(), "deepseek/deepseek-r1".to_owned(), "openai/gpt-4o".to_owned()]
+                        };
+                        let previous_model = self.selected_model.clone();
+                        egui::ComboBox::from_id_salt("model_dropdown")
+                            .selected_text(RichText::new(selected_btn_text).small().color(TEXT))
+                            .width(190.0)
+                            .show_ui(ui, |ui| {
+                                for model in &models {
+                                    let is_selected = self.selected_model == *model;
+                                    let (rect, response) = ui.allocate_exact_size(egui::vec2(240.0, 28.0), egui::Sense::click());
+                                    let is_hovered = response.hovered();
+                                    let bg_color = if is_selected { SURFACE_HIGH } else if is_hovered { Color32::from_rgb(30, 37, 48) } else { Color32::TRANSPARENT };
+                                    ui.painter().rect_filled(rect, 4.0, bg_color);
+                                    
+                                    // Draw name left
+                                    ui.painter().text(
+                                        rect.left_center() + egui::vec2(8.0, 0.0),
+                                        egui::Align2::LEFT_CENTER,
+                                        model,
+                                        egui::FontId::proportional(12.0),
+                                        if is_selected { ACCENT } else { TEXT }
+                                    );
+                                    
+                                    // Draw badge right-aligned
+                                    let (mode_name, tag_color, tag_icon) = if model.contains("gemma") {
+                                        ("Fast", Color32::from_rgb(70, 180, 90), "⚡")
+                                    } else if model.contains("r1") || model.contains("thinking") || model.contains("ornith") {
+                                        ("Thinking", Color32::from_rgb(220, 160, 40), "💡")
+                                    } else if model.contains("claude") {
+                                        ("Claude", Color32::from_rgb(220, 120, 70), "✨")
+                                    } else {
+                                        ("Model", Color32::from_rgb(80, 120, 220), "⚙")
+                                    };
+                                    
+                                    let badge_rect = egui::Rect::from_center_size(
+                                        rect.right_center() - egui::vec2(45.0, 0.0),
+                                        egui::vec2(75.0, 16.0)
+                                    );
+                                    ui.painter().rect_filled(badge_rect, 4.0, Color32::from_rgb(25, 30, 40));
+                                    ui.painter().rect_stroke(badge_rect, 4.0, egui::Stroke::new(1.0_f32, Color32::from_rgb(45, 52, 65)), egui::StrokeKind::Outside);
+                                    
+                                    ui.painter().text(
+                                        badge_rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        format!("{} {}", mode_name, tag_icon),
+                                        egui::FontId::proportional(9.0),
+                                        tag_color
+                                    );
+                                    
+                                    if response.clicked() {
+                                        let previous_model = self.selected_model.clone();
+                                        self.selected_model = model.clone();
+                                        self.switch_model(previous_model, self.selected_model.clone());
+                                        ui.close_menu();
+                                    }
                                 }
                             });
                         if previous_model != self.selected_model {
@@ -893,7 +1113,12 @@ impl AiHelperApp {
                                     self.stop();
                                 }
                             } else {
-                                let can_send = !self.input.trim().is_empty() && !self.models.is_empty() && self.loading_model.is_none();
+                                let has_active_model = if self.active_provider == "Local Ollama" {
+                                    !self.models.is_empty()
+                                } else {
+                                    !self.selected_model.is_empty()
+                                };
+                                let can_send = !self.input.trim().is_empty() && has_active_model && self.loading_model.is_none();
                                 let btn_color = if can_send { ACCENT } else { Color32::from_rgb(30, 35, 45) };
                                 let text_color = if can_send { Color32::BLACK } else { MUTED };
                                 
@@ -1149,18 +1374,151 @@ impl AiHelperApp {
             }
         });
     }
+
+    fn settings_view(&mut self, ui: &mut egui::Ui) {
+        self.header(
+            ui,
+            "Settings & Providers",
+            "Configure cloud API keys, OpenRouter routing, and local Ollama connections",
+        );
+
+        ScrollArea::vertical().show(ui, |ui| {
+            ui.add_space(8.0);
+
+            // Active Provider Selection Card
+            egui::Frame::new()
+                .fill(SURFACE)
+                .corner_radius(10.0)
+                .inner_margin(16.0)
+                .stroke(egui::Stroke::new(1.0_f32, BORDER))
+                .show(ui, |ui| {
+                    ui.label(RichText::new("🌐 Active Execution Engine / Provider").strong().color(TEXT));
+                    ui.add_space(4.0);
+                    ui.label(RichText::new("Choose whether DeskPilot routes requests through local Ollama or cloud providers like OpenRouter.").small().color(MUTED));
+                    ui.add_space(10.0);
+
+                    ui.horizontal(|ui| {
+                        let is_local = self.active_provider == "Local Ollama";
+                        if ui.selectable_label(is_local, "🖥 Local Ollama (100% Private)").clicked() {
+                            self.active_provider = "Local Ollama".to_owned();
+                            let _ = self.storage.set_setting("active_provider", "Local Ollama");
+                        }
+                        let is_openrouter = self.active_provider == "OpenRouter";
+                        if ui.selectable_label(is_openrouter, "⚡ OpenRouter (Claude, DeepSeek, GPT-4o)").clicked() {
+                            self.active_provider = "OpenRouter".to_owned();
+                            let _ = self.storage.set_setting("active_provider", "OpenRouter");
+                        }
+                    });
+                });
+
+            ui.add_space(14.0);
+
+            // OpenRouter API Configuration Card
+            egui::Frame::new()
+                .fill(SURFACE)
+                .corner_radius(10.0)
+                .inner_margin(16.0)
+                .stroke(egui::Stroke::new(1.0_f32, BORDER))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(RichText::new("⚡ OpenRouter API Integration").strong().color(ACCENT));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            let status_text = if self.openrouter_key.is_empty() {
+                                RichText::new("No Key Set").small().color(MUTED)
+                            } else {
+                                RichText::new("API Key Ready").small().color(ACCENT)
+                            };
+                            ui.label(status_text);
+                        });
+                    });
+                    ui.add_space(6.0);
+                    ui.label(RichText::new("Connect to hundreds of models (Claude 3.7 Sonnet, DeepSeek R1, GPT-4o) with a single OpenRouter key.").small().color(MUTED));
+                    ui.add_space(12.0);
+
+                    ui.label(RichText::new("API Key:").small().color(TEXT));
+                    let key_edit = TextEdit::singleline(&mut self.openrouter_key)
+                        .password(true)
+                        .hint_text("sk-or-v1-...");
+                    ui.add_sized([ui.available_width().max(200.0), 32.0], key_edit);
+
+                    ui.add_space(8.0);
+                    ui.label(RichText::new("Default Cloud Model:").small().color(TEXT));
+                    ui.add_sized([ui.available_width().max(200.0), 32.0], TextEdit::singleline(&mut self.openrouter_model).hint_text("anthropic/claude-3.7-sonnet"));
+
+                    ui.add_space(12.0);
+                    ui.horizontal(|ui| {
+                        if ui.button(RichText::new("Save Cloud Settings").strong().color(Color32::BLACK)).clicked() {
+                            let _ = self.storage.set_setting("openrouter_key", &self.openrouter_key);
+                            let _ = self.storage.set_setting("openrouter_model", &self.openrouter_model);
+                            // Update runtime provider key
+                            if let Some(p) = self.cloud_providers.iter_mut().find(|p| p.name == "OpenRouter") {
+                                p.api_key = if self.openrouter_key.is_empty() { None } else { Some(self.openrouter_key.clone()) };
+                            }
+                            self.settings_saved_notice = Some("OpenRouter settings saved successfully!".to_owned());
+                            self.log("INFO", "OpenRouter credentials saved to local SQLite");
+                        }
+
+                        if let Some(notice) = &self.settings_saved_notice {
+                            ui.label(RichText::new(notice).small().color(ACCENT));
+                        }
+                    });
+                });
+
+            ui.add_space(14.0);
+
+            // Local Ollama Status & Setup
+            egui::Frame::new()
+                .fill(SURFACE)
+                .corner_radius(10.0)
+                .inner_margin(16.0)
+                .stroke(egui::Stroke::new(1.0_f32, BORDER))
+                .show(ui, |ui| {
+                    ui.label(RichText::new("🖥 Local Ollama Runtime").strong().color(TEXT));
+                    ui.add_space(4.0);
+                    ui.label(RichText::new(format!("Endpoint: {} (127.0.0.1:11434)", OLLAMA_BASE_URL)).small().color(MUTED));
+                    ui.add_space(6.0);
+
+                    let (status_color, status_text) = match &self.connection {
+                        ConnectionStatus::Connected => (ACCENT, format!("Connected — {} models available locally", self.models.len())),
+                        ConnectionStatus::Connecting => (Color32::YELLOW, "Connecting to Ollama...".to_string()),
+                        ConnectionStatus::Error(e) => (DANGER, format!("Ollama not running: {}", truncate(e, 50))),
+                    };
+                    ui.horizontal(|ui| {
+                        let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                        ui.painter().circle_filled(rect.center(), 4.0, status_color);
+                        ui.label(RichText::new(status_text).color(status_color));
+                    });
+
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("⬇ Pull / Download Model").clicked() {
+                            self.show_pull_dialog = true;
+                        }
+                        if ui.button("🔄 Refresh Local Models").clicked() {
+                            let client = self.client.clone();
+                            let events = self.events_tx.clone();
+                            self.runtime.spawn(async move {
+                                if let Ok(models) = client.list_models().await {
+                                    let _ = events.send(StreamEvent::ModelsLoaded(models));
+                                }
+                            });
+                        }
+                    });
+                });
+        });
+    }
 }
 
 impl eframe::App for AiHelperApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         if ctx.input(|i| i.viewport().close_requested()) {
-            if !self.force_quit {
-                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-                ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
-            }
-        }
-        if self.force_quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+
+        // Ensure window is visible and focused
+        if ctx.cumulative_pass_nr() <= 1 {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+            ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
         
         while let Ok(msg) = self.ipc_rx.try_recv() {
@@ -1222,6 +1580,52 @@ impl eframe::App for AiHelperApp {
                 self.show_add_project_dialog = false;
             }
         }
+
+        // Model Downloader / Puller Dialog
+        if self.show_pull_dialog {
+            let mut open = true;
+            egui::Window::new("⬇ Download / Pull Ollama Model")
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .show(ctx, |ui| {
+                    ui.label("Model identifier (e.g. ornith:9b, qwen3.5:2b, gemma4:e2b):");
+                    ui.text_edit_singleline(&mut self.pull_model_input);
+                    ui.add_space(8.0);
+
+                    if let Some((completed, total)) = self.pull_progress {
+                        let pct = (completed as f32 / total as f32).clamp(0.0, 1.0);
+                        let mb_done = completed as f32 / (1024.0 * 1024.0);
+                        let mb_total = total as f32 / (1024.0 * 1024.0);
+                        ui.add(egui::ProgressBar::new(pct).text(format!("{:.1}% ({:.1} MB / {:.1} MB)", pct * 100.0, mb_done, mb_total)));
+                    } else if let Some(ref status) = self.pull_status {
+                        ui.label(RichText::new(status).small().color(ACCENT));
+                    }
+
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        let can_pull = !self.pull_model_input.trim().is_empty();
+                        if ui.add_enabled(can_pull, egui::Button::new("Download")).clicked() {
+                            let model_name = self.pull_model_input.trim().to_owned();
+                            let pull_client = self.client.clone();
+                            let pull_events = self.events_tx.clone();
+                            let (cancel_tx, cancel_rx) = oneshot::channel();
+                            self.cancel_tx = Some(cancel_tx);
+                            self.pull_status = Some(format!("Initiating download for {model_name}..."));
+                            self.runtime.spawn(async move {
+                                let _ = pull_client.pull_model(&model_name, &pull_events, cancel_rx).await;
+                            });
+                        }
+                        if ui.button("Close").clicked() {
+                            self.show_pull_dialog = false;
+                        }
+                    });
+                });
+            if !open {
+                self.show_pull_dialog = false;
+            }
+        }
         // Custom title bar (full width, no padding, native-looking controls)
         egui::TopBottomPanel::top("titlebar")
             .exact_height(36.0)
@@ -1253,7 +1657,7 @@ impl eframe::App for AiHelperApp {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                         // Close
                         if titlebar_button(ui, "close", Color32::from_rgb(232, 17, 35), TEXT).clicked() {
-                            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                         }
                         // Maximize
                         let is_max = ctx.input(|i| i.viewport().maximized.unwrap_or(false));
@@ -1301,6 +1705,7 @@ impl eframe::App for AiHelperApp {
                 View::Chat => self.chat_view(ui),
                 View::Skills => self.skills_view(ui),
                 View::Logs => self.logs_view(ui),
+                View::Settings => self.settings_view(ui),
             });
     }
 

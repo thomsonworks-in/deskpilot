@@ -88,7 +88,8 @@ impl Storage {
              CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
              CREATE TABLE IF NOT EXISTS conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL, title TEXT NOT NULL, updated_at INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, done INTEGER NOT NULL);
-             CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL DEFAULT 1, content TEXT NOT NULL, embedding TEXT NOT NULL DEFAULT '[]');
+             CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL DEFAULT 1, content TEXT NOT NULL, embedding TEXT NOT NULL DEFAULT '[]', confidence REAL NOT NULL DEFAULT 1.0, access_count INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE IF NOT EXISTS scratchpad (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL DEFAULT 1, note TEXT NOT NULL, decay_score REAL NOT NULL DEFAULT 1.0, created_at INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL);"
         )?;
         
@@ -252,6 +253,53 @@ impl Storage {
         self.connection()?.execute(
             "INSERT INTO logs(timestamp, level, message) VALUES(?1, ?2, ?3)",
             params![timestamp as i64, level, message],
+        )?;
+        Ok(())
+    }
+
+    pub fn append_scratchpad(&self, project_id: u64, note: &str) -> Result<()> {
+        let now = chrono::Utc::now().timestamp();
+        self.connection()?.execute(
+            "INSERT INTO scratchpad(project_id, note, decay_score, created_at) VALUES(?1, ?2, 1.0, ?3)",
+            params![project_id as i64, note, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_scratchpad(&self, project_id: u64) -> Result<Vec<String>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT note FROM scratchpad WHERE project_id = ?1 ORDER BY id DESC LIMIT 15")?;
+        let notes = stmt.query_map([project_id as i64], |row| row.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
+        Ok(notes)
+    }
+
+    pub fn get_adaptive_context(&self, project_id: u64) -> String {
+        let scratch = self.get_scratchpad(project_id).unwrap_or_default();
+        if scratch.is_empty() {
+            return String::new();
+        }
+        format!(
+            "\n\n[ADAPTIVE MEMORY LAYER - ACTIVE SCRATCHPAD]\n{}",
+            scratch.join("\n- ")
+        )
+    }
+
+    pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT value FROM settings WHERE key = ?1")?;
+        let mut rows = stmt.query([key])?;
+        if let Some(row) = rows.next()? {
+            Ok(Some(row.get(0)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
+        let conn = self.connection()?;
+        conn.execute(
+            "INSERT INTO settings(key, value) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            rusqlite::params![key, value],
         )?;
         Ok(())
     }

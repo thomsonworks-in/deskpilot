@@ -2,44 +2,35 @@
 
 ## Goal
 
-Build a genuinely native Rust desktop chat client that streams responses from a local Ollama server. No HTML, React, Tauri, Electron, WebView, or browser engine. Pure egui + Rust.
+Build an enterprise-grade, private native Rust desktop thin client and autonomous agent harness (`deskpilot.exe`). Zero HTML/Electron/Node.js runtime overhead with native `egui` GPU rendering, local Ollama streaming, live internet search, multi-provider cloud failover, and persistent SQLite adaptive memory.
 
-## Scope (v1)
+---
 
-- Chat transcript showing user and assistant messages
-- Multiline input field
-- Send button (Enter sends, Shift+Enter inserts newline)
-- Stop button while generation is active
-- Model selector populated from local Ollama (`http://127.0.0.1:11434`)
-- Streaming assistant responses from Ollama
-- Visible connection indicator and readable errors
-- Default model: `qwen3.6:35b-a3b`
-- UI remains responsive during generation
+## Core Capabilities (v2.0)
 
-## Out of Scope (v1)
+- **Pure Native Execution**: Standalone ~11.7 MB Windows executable (`deskpilot.exe`).
+- **Live Internet Search**: Built-in `web_search` and `curl` scrapers with zero cutoff limitations.
+- **Model Lifecycle & Pull Manager**: In-app dialog with live streaming progress bar (`MB/GB`, percentage) to download models from Ollama (`/api/pull`).
+- **Multi-Provider & Control Sync**: Dynamic bootstrap synchronization from `Control` backend (`/api/v1/cli/bootstrap`) with automatic cloud failover (OpenRouter, Groq, HuggingFace).
+- **Default Adaptive Memory Layer**: Embedded SQLite (`rusqlite`) storing:
+  - `scratchpad` table for fast O(1) context recall with decay tracking.
+  - `memories` table with semantic embeddings and confidence scoring.
+- **Agentic Tool Harness**:
+  - Native PowerShell command execution with safety boundaries.
+  - Workspace file reader & writer (`read_file`, `write_file`, `list_files`).
+  - Skill auto-discovery (`.claude/skills`, `.gemini/skills`).
+  - Multi-step tool execution loop with collapsible UI traces.
 
-- Memory / conversation history persistence
-- Tools, function calling, or file editing
-- Embeddings or RAG
-- Authentication or remote servers
-- Packaging / installer / distribution
-- Theming beyond basic egui defaults
-- Multi-window or tray icon
+---
 
 ## Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| UI | `eframe` / `egui` (native Rust GUI) |
-| Async runtime | `tokio` |
-| HTTP + streaming | `reqwest` with `stream` feature |
-| Serialization | `serde` + `serde_json` |
-| Streams | `futures-util` |
-| Errors | `anyhow` |
-
-## Design Principles
-
-1. **Native first** — No embedded browser, no web tech
-2. **Small footprint** — Target ~3–8 MB binary, low RAM
-3. **Responsive** — Async streaming never blocks the UI thread
-4. **Simple** — Minimal modules, clear data flow, no over-engineering
+|---|---|
+| **UI** | `eframe` / `egui` 0.31 (GPU-accelerated immediate mode GUI) |
+| **Markdown** | `egui_commonmark` with dark code highlighting |
+| **Async Runtime** | `tokio` (multi-threaded) |
+| **HTTP & Networking** | `reqwest` with streaming JSON & SSE |
+| **Storage & Memory** | `rusqlite` (bundled SQLite with WAL mode) |
+| **Shell & OS** | Native Win32 / PowerShell / Command subprocesses |
+| **System Tray** | `tray-icon` + `windows-sys` single-instance IPC |

@@ -81,6 +81,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         definition("read_file", "Read a UTF-8 text file inside the workspace.", serde_json::json!({"type":"object","required":["path"],"properties":{"path":{"type":"string"}}})),
         definition("list_files", "List files inside a workspace directory.", serde_json::json!({"type":"object","properties":{"path":{"type":"string"}}})),
         definition("read_skill", "Load the full instructions for an available SKILL.md by skill name.", serde_json::json!({"type":"object","required":["name"],"properties":{"name":{"type":"string"}}})),
+        definition("web_search", "Search the live public internet using a search query and return top results.", serde_json::json!({"type":"object","required":["query"],"properties":{"query":{"type":"string"}}})),
         definition("curl", "Make an HTTP GET request and return the response body. Use only when the user requests internet access.", serde_json::json!({"type":"object","required":["url"],"properties":{"url":{"type":"string"}}})),
         definition("powershell", "Run a non-destructive PowerShell command in the workspace.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})),
         definition("bash", "Run a non-destructive bash command in the workspace when bash is installed.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})),
@@ -146,6 +147,18 @@ pub async fn execute(
                 .find(|skill| skill.name.eq_ignore_ascii_case(requested))
                 .ok_or_else(|| anyhow!("unknown skill: {requested}"))?;
             Ok(limit(tokio::fs::read_to_string(&skill.path).await?, 48_000))
+        }
+        "web_search" => {
+            let query = required(arguments, "query")?;
+            let url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding_encode(query));
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(15))
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+                .build()?;
+            let response = client.get(&url).send().await?;
+            let html = response.text().await?;
+            let parsed = strip_search_html(&html);
+            Ok(limit(parsed, 16_000))
         }
         "curl" => {
             let url = required(arguments, "url")?;
@@ -280,4 +293,57 @@ fn limit(mut text: String, max: usize) -> String {
         text.push_str("\n[output truncated]");
     }
     text
+}
+
+fn urlencoding_encode(s: &str) -> String {
+    let mut result = String::new();
+    for byte in s.bytes() {
+        match byte {
+            b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                result.push(byte as char);
+            }
+            b' ' => result.push('+'),
+            _ => {
+                result.push_str(&format!("%{:02X}", byte));
+            }
+        }
+    }
+    result
+}
+
+fn strip_search_html(html: &str) -> String {
+    let mut results = Vec::new();
+    let mut current = String::new();
+    let mut in_tag = false;
+
+    for part in html.split("<a class=\"result__snippet\"") {
+        if let Some(snippet_start) = part.split(">").nth(1) {
+            if let Some(snippet_body) = snippet_start.split("</a>").next() {
+                let mut clean = String::new();
+                for c in snippet_body.chars() {
+                    if c == '<' { in_tag = true; }
+                    else if c == '>' { in_tag = false; }
+                    else if !in_tag { clean.push(c); }
+                }
+                let clean = clean.trim();
+                if !clean.is_empty() && clean.len() > 15 {
+                    results.push(format!("• {}", clean));
+                    if results.len() >= 8 { break; }
+                }
+            }
+        }
+    }
+
+    if results.is_empty() {
+        // Fallback simple tag stripper
+        for c in html.chars() {
+            if c == '<' { in_tag = true; }
+            else if c == '>' { in_tag = false; }
+            else if !in_tag { current.push(c); }
+        }
+        let lines: Vec<&str> = current.lines().map(|l| l.trim()).filter(|l| l.len() > 20).take(10).collect();
+        lines.join("\n")
+    } else {
+        results.join("\n\n")
+    }
 }

@@ -113,6 +113,40 @@ pub(crate) struct RunningModel {
     pub name: String,
 }
 
+#[derive(Serialize)]
+pub(crate) struct PullRequest<'a> {
+    pub name: &'a str,
+    pub stream: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PullProgress {
+    pub status: String,
+    #[serde(default)]
+    pub digest: Option<String>,
+    #[serde(default)]
+    pub total: Option<u64>,
+    #[serde(default)]
+    pub completed: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    pub name: String,
+    pub base_url: String,
+    pub models: Vec<String>,
+    #[serde(default)]
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderBootstrapResponse {
+    pub status: String,
+    pub providers: Vec<ProviderConfig>,
+    #[serde(default)]
+    pub keys: Option<serde_json::Value>,
+}
+
 impl ChatChunk {
     pub fn from_line(line: &str) -> Result<Option<Self>, String> {
         let line = line.trim();

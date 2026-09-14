@@ -27,6 +27,13 @@ pub enum StreamEvent {
     Cancelled,
     Error(String),
     ModelsLoaded(Vec<String>),
+    PullProgress {
+        status: String,
+        completed: u64,
+        total: u64,
+    },
+    PullFinished(String),
+    ProvidersLoaded(Vec<crate::message::ProviderConfig>),
     EmbeddingReady {
         memory_id: u64,
         embedding: Vec<f32>,
@@ -147,6 +154,164 @@ impl OllamaClient {
             Err(error) => return Err(error),
         }
         Ok(())
+    }
+
+    pub async fn pull_model(
+        &self,
+        model: &str,
+        events: &mpsc::UnboundedSender<StreamEvent>,
+        mut cancel: oneshot::Receiver<()>,
+    ) -> Result<()> {
+        let request = crate::message::PullRequest {
+            name: model,
+            stream: true,
+        };
+        let response = self
+            .http
+            .post(format!("{}/api/pull", self.base_url))
+            .json(&request)
+            .send()
+            .await
+            .context("could not initiate model pull request")?;
+        let response = response_error(response, "model pull").await?;
+
+        let mut bytes = response.bytes_stream();
+        let mut buffer = Vec::<u8>::new();
+
+        loop {
+            tokio::select! {
+                _ = &mut cancel => {
+                    let _ = events.send(StreamEvent::Notice(format!("Pull of {model} cancelled")));
+                    return Ok(());
+                }
+                next = bytes.next() => match next {
+                    Some(Ok(chunk)) => {
+                        buffer.extend_from_slice(&chunk);
+                        while let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
+                            let line = buffer.drain(..=newline).collect::<Vec<_>>();
+                            if let Ok(text) = std::str::from_utf8(&line[..line.len().saturating_sub(1)]) {
+                                if let Ok(progress) = serde_json::from_str::<crate::message::PullProgress>(text.trim()) {
+                                    let _ = events.send(StreamEvent::PullProgress {
+                                        status: progress.status,
+                                        completed: progress.completed.unwrap_or(0),
+                                        total: progress.total.unwrap_or(0),
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    Some(Err(error)) => return Err(anyhow!("model pull stream error: {error}")),
+                    None => {
+                        let _ = events.send(StreamEvent::PullFinished(model.to_owned()));
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    }
+
+    pub async fn fetch_control_providers(&self, control_url: &str) -> Result<Vec<crate::message::ProviderConfig>> {
+        let url = format!("{}/api/v1/cli/bootstrap", control_url.trim_end_matches('/'));
+        let response = self.http.get(&url).send().await.context("failed to fetch bootstrap config from Control")?;
+        let body: crate::message::ProviderBootstrapResponse = response.json().await.context("invalid Control bootstrap response")?;
+        Ok(body.providers)
+    }
+
+    pub async fn stream_cloud_chat(
+        &self,
+        base_url: &str,
+        api_key: &str,
+        model: &str,
+        messages: &[Message],
+        events: &mpsc::UnboundedSender<StreamEvent>,
+        mut cancel: oneshot::Receiver<()>,
+        tools: ToolContext<'_>,
+    ) -> Result<()> {
+        let _ = events.send(StreamEvent::Started);
+        let history = messages.iter().map(|m| {
+            let role = match m.role {
+                crate::message::Role::System => "system",
+                crate::message::Role::User => "user",
+                crate::message::Role::Assistant => "assistant",
+            };
+            serde_json::json!({
+                "role": role,
+                "content": m.content,
+            })
+        }).collect::<Vec<_>>();
+
+        let request = serde_json::json!({
+            "model": model,
+            "messages": history,
+            "stream": true,
+        });
+
+        let mut req = self.http.post(format!("{}/chat/completions", base_url.trim_end_matches('/')))
+            .header("HTTP-Referer", "https://github.com/thomsonworks-in/deskpilot")
+            .header("X-Title", "DeskPilot")
+            .json(&request);
+        if !api_key.is_empty() && api_key != "sk-local" {
+            req = req.header("Authorization", format!("Bearer {api_key}"));
+        }
+
+        let response = req.send().await.context("cloud provider chat request failed")?;
+        let response = response_error(response, "cloud chat").await?;
+
+        let mut bytes = response.bytes_stream();
+        let mut buffer = Vec::<u8>::new();
+        let mut received = false;
+
+        loop {
+            tokio::select! {
+                _ = &mut cancel => {
+                    let _ = events.send(StreamEvent::Cancelled);
+                    return Ok(());
+                }
+                next = bytes.next() => match next {
+                    Some(Ok(chunk)) => {
+                        buffer.extend_from_slice(&chunk);
+                        while let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
+                            let line = buffer.drain(..=newline).collect::<Vec<_>>();
+                            if let Ok(text) = std::str::from_utf8(&line) {
+                                let trimmed = text.trim();
+                                if trimmed.starts_with("data: ") {
+                                    let data = &trimmed[6..];
+                                    if data == "[DONE]" {
+                                        let _ = events.send(StreamEvent::Finished);
+                                        return Ok(());
+                                    }
+                                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(data) {
+                                        // Support thinking / reasoning deltas (DeepSeek, OpenRouter, Qwen)
+                                        if let Some(reasoning) = json.pointer("/choices/0/delta/reasoning")
+                                            .or_else(|| json.pointer("/choices/0/delta/reasoning_content"))
+                                            .and_then(|v| v.as_str()) {
+                                            if !reasoning.is_empty() {
+                                                received = true;
+                                                let _ = events.send(StreamEvent::ThinkingDelta(reasoning.to_owned()));
+                                            }
+                                        }
+                                        if let Some(content) = json.pointer("/choices/0/delta/content").and_then(|v| v.as_str()) {
+                                            if !content.is_empty() {
+                                                received = true;
+                                                let _ = events.send(StreamEvent::ContentDelta(content.to_owned()));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Some(Err(error)) => return Err(anyhow!("cloud stream error: {error}")),
+                    None => {
+                        if received {
+                            let _ = events.send(StreamEvent::Finished);
+                            return Ok(());
+                        }
+                        return Err(anyhow!("stream ended with no content"));
+                    }
+                }
+            }
+        }
     }
 
     pub async fn stream_chat(
