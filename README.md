@@ -1,6 +1,8 @@
-# DeskPilot
+# ThomsonWorks DeskPilot
 
 > **The ultra-fast, local-first autonomous AI desktop agent and workspace assistant built in pure Rust.**
+>
+> *Official repository by [ThomsonWorks](https://github.com/thomsonworks-in).*
 
 DeskPilot gives you the power of an autonomous AI agent running directly on your operating system. Whether you run 100% private local models (via runtimes like Ollama, llama.cpp, or vLLM) or route to frontier cloud reasoning models (Claude 3.7, DeepSeek-R1, GPT-4o via OpenRouter), DeskPilot gives you instant startup, autonomous file and shell execution, and persistent vector memory with **zero Electron or Chromium RAM bloat**.
 
