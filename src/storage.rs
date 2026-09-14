@@ -298,9 +298,30 @@ impl Storage {
     pub fn set_setting(&self, key: &str, value: &str) -> Result<()> {
         let conn = self.connection()?;
         conn.execute(
-            "INSERT INTO settings(key, value) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-            rusqlite::params![key, value],
+            "INSERT INTO settings(key, value) VALUES(?1, ?2) ON CONFLICT(key) DO UPDATE SET value = ?2",
+            params![key, value],
         )?;
         Ok(())
+    }
+
+    pub fn get_recent_models(&self) -> Result<Vec<String>> {
+        if let Some(json_str) = self.get_setting("recent_models")? {
+            if let Ok(list) = serde_json::from_str::<Vec<String>>(&json_str) {
+                return Ok(list);
+            }
+        }
+        Ok(Vec::new())
+    }
+
+    pub fn record_recent_model(&self, model: &str) -> Result<()> {
+        if model.is_empty() || model == "No models" {
+            return Ok(());
+        }
+        let mut recents = self.get_recent_models().unwrap_or_default();
+        recents.retain(|m| m != model);
+        recents.insert(0, model.to_owned());
+        recents.truncate(5);
+        let serialized = serde_json::to_string(&recents)?;
+        self.set_setting("recent_models", &serialized)
     }
 }

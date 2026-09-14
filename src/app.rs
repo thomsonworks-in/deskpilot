@@ -244,6 +244,16 @@ impl AiHelperApp {
             }
         });
 
+        // If OpenRouter key is set or available, fetch dynamic OpenRouter model catalog
+        let or_client = app.client.clone();
+        let or_events = app.events_tx.clone();
+        let or_key = app.openrouter_key.clone();
+        app.runtime.spawn(async move {
+            if let Ok(models) = or_client.fetch_openrouter_models(&or_key).await {
+                let _ = or_events.send(StreamEvent::OpenRouterModelsLoaded(models));
+            }
+        });
+
         app.log("INFO", "DeskPilot started with Adaptive Memory & Tool Harness");
         app
     }
@@ -336,6 +346,12 @@ impl AiHelperApp {
                 StreamEvent::ProvidersLoaded(providers) => {
                     self.log("INFO", format!("Loaded {} providers from Control API", providers.len()));
                     self.cloud_providers = providers;
+                }
+                StreamEvent::OpenRouterModelsLoaded(models) => {
+                    self.log("INFO", format!("Retrieved {} dynamic models from OpenRouter catalog", models.len()));
+                    if let Some(p) = self.cloud_providers.iter_mut().find(|p| p.name == "OpenRouter") {
+                        p.models = models;
+                    }
                 }
                 StreamEvent::Finished => {
                     self.generating = false;
@@ -469,6 +485,7 @@ impl AiHelperApp {
             "INFO",
             format!("Generation requested with model {}", self.selected_model),
         );
+        let _ = self.storage.record_recent_model(&self.selected_model);
         self.save_state();
 
         let history = self.messages[..self.messages.len() - 1].to_vec();
@@ -574,6 +591,7 @@ impl AiHelperApp {
         self.loading_model = Some(next.clone());
         self.model_error = None;
         self.log("INFO", format!("Switching model from {previous} to {next}"));
+        let _ = self.storage.record_recent_model(&next);
         self.save_state();
         let client = self.client.clone();
         let events = self.events_tx.clone();
@@ -1045,63 +1063,118 @@ impl AiHelperApp {
                             vec!["anthropic/claude-3.7-sonnet".to_owned(), "deepseek/deepseek-r1".to_owned(), "openai/gpt-4o".to_owned()]
                         };
                         let previous_model = self.selected_model.clone();
+                        let recent_models = self.storage.get_recent_models().unwrap_or_default();
+                        
+                        // Curated lists
+                        let frontier_models = [
+                            "anthropic/claude-3.7-sonnet",
+                            "deepseek/deepseek-r1",
+                            "openai/gpt-4o",
+                            "google/gemini-2.0-flash-001",
+                        ];
+                        let budget_models = [
+                            "deepseek/deepseek-chat",
+                            "meta-llama/llama-3.3-70b-instruct",
+                            "qwen/qwen-2.5-coder-32b-instruct",
+                            "google/gemini-2.0-flash-lite-preview-02-05:free",
+                        ];
+
                         egui::ComboBox::from_id_salt("model_dropdown")
                             .selected_text(RichText::new(selected_btn_text).small().color(TEXT))
-                            .width(190.0)
+                            .width(210.0)
                             .show_ui(ui, |ui| {
-                                for model in &models {
-                                    let is_selected = self.selected_model == *model;
-                                    let (rect, response) = ui.allocate_exact_size(egui::vec2(240.0, 28.0), egui::Sense::click());
-                                    let is_hovered = response.hovered();
-                                    let bg_color = if is_selected { SURFACE_HIGH } else if is_hovered { Color32::from_rgb(30, 37, 48) } else { Color32::TRANSPARENT };
-                                    ui.painter().rect_filled(rect, 4.0, bg_color);
-                                    
-                                    // Draw name left
-                                    ui.painter().text(
-                                        rect.left_center() + egui::vec2(8.0, 0.0),
-                                        egui::Align2::LEFT_CENTER,
-                                        model,
-                                        egui::FontId::proportional(12.0),
-                                        if is_selected { ACCENT } else { TEXT }
-                                    );
-                                    
-                                    // Draw badge right-aligned
-                                    let (mode_name, tag_color, tag_icon) = if model.contains("gemma") {
-                                        ("Fast", Color32::from_rgb(70, 180, 90), "⚡")
-                                    } else if model.contains("r1") || model.contains("thinking") || model.contains("ornith") {
-                                        ("Thinking", Color32::from_rgb(220, 160, 40), "💡")
-                                    } else if model.contains("claude") {
-                                        ("Claude", Color32::from_rgb(220, 120, 70), "✨")
-                                    } else {
-                                        ("Model", Color32::from_rgb(80, 120, 220), "⚙")
+                                egui::ScrollArea::vertical().max_height(350.0).show(ui, |ui| {
+                                    let mut render_section = |ui: &mut egui::Ui, title: &str, items: &[String], selected_model: &mut String, switch_flag: &mut Option<(String, String)>| {
+                                        if items.is_empty() {
+                                            return;
+                                        }
+                                        ui.add_space(4.0);
+                                        ui.label(RichText::new(title).small().strong().color(Color32::from_rgb(140, 160, 190)));
+                                        ui.add_space(2.0);
+
+                                        for model in items {
+                                            let is_selected = *selected_model == *model;
+                                            let (rect, response) = ui.allocate_exact_size(egui::vec2(250.0, 26.0), egui::Sense::click());
+                                            let is_hovered = response.hovered();
+                                            let bg_color = if is_selected { SURFACE_HIGH } else if is_hovered { Color32::from_rgb(30, 37, 48) } else { Color32::TRANSPARENT };
+                                            ui.painter().rect_filled(rect, 4.0, bg_color);
+                                            
+                                            // Draw model name
+                                            let display_name = truncate(model, 26);
+                                            ui.painter().text(
+                                                rect.left_center() + egui::vec2(8.0, 0.0),
+                                                egui::Align2::LEFT_CENTER,
+                                                display_name,
+                                                egui::FontId::proportional(11.5),
+                                                if is_selected { ACCENT } else { TEXT }
+                                            );
+                                            
+                                            // Draw badge right-aligned
+                                            let (mode_name, tag_color, tag_icon) = if model.contains("gemma") || model.contains("flash") {
+                                                ("Fast", Color32::from_rgb(70, 180, 90), "⚡")
+                                            } else if model.contains("r1") || model.contains("thinking") || model.contains("ornith") {
+                                                ("Reasoning", Color32::from_rgb(220, 160, 40), "💡")
+                                            } else if model.contains("claude") || model.contains("gpt-4") {
+                                                ("Frontier", Color32::from_rgb(220, 120, 70), "🏆")
+                                            } else if model.contains("free") || model.contains("deepseek-chat") {
+                                                ("Budget", Color32::from_rgb(120, 200, 120), "💰")
+                                            } else {
+                                                ("Model", Color32::from_rgb(80, 120, 220), "⚙")
+                                            };
+                                            
+                                            let badge_rect = egui::Rect::from_center_size(
+                                                rect.right_center() - egui::vec2(40.0, 0.0),
+                                                egui::vec2(68.0, 15.0)
+                                            );
+                                            ui.painter().rect_filled(badge_rect, 3.0, Color32::from_rgb(25, 30, 40));
+                                            ui.painter().rect_stroke(badge_rect, 3.0, egui::Stroke::new(1.0_f32, Color32::from_rgb(45, 52, 65)), egui::StrokeKind::Outside);
+                                            
+                                            ui.painter().text(
+                                                badge_rect.center(),
+                                                egui::Align2::CENTER_CENTER,
+                                                format!("{} {}", mode_name, tag_icon),
+                                                egui::FontId::proportional(8.5),
+                                                tag_color
+                                            );
+                                            
+                                            if response.clicked() {
+                                                *switch_flag = Some((selected_model.clone(), model.clone()));
+                                                *selected_model = model.clone();
+                                                ui.close_menu();
+                                            }
+                                        }
+                                        ui.add_space(3.0);
                                     };
-                                    
-                                    let badge_rect = egui::Rect::from_center_size(
-                                        rect.right_center() - egui::vec2(45.0, 0.0),
-                                        egui::vec2(75.0, 16.0)
-                                    );
-                                    ui.painter().rect_filled(badge_rect, 4.0, Color32::from_rgb(25, 30, 40));
-                                    ui.painter().rect_stroke(badge_rect, 4.0, egui::Stroke::new(1.0_f32, Color32::from_rgb(45, 52, 65)), egui::StrokeKind::Outside);
-                                    
-                                    ui.painter().text(
-                                        badge_rect.center(),
-                                        egui::Align2::CENTER_CENTER,
-                                        format!("{} {}", mode_name, tag_icon),
-                                        egui::FontId::proportional(9.0),
-                                        tag_color
-                                    );
-                                    
-                                    if response.clicked() {
-                                        let previous_model = self.selected_model.clone();
-                                        self.selected_model = model.clone();
-                                        self.switch_model(previous_model, self.selected_model.clone());
-                                        ui.close_menu();
+
+                                    let mut pending_switch: Option<(String, String)> = None;
+
+                                    // Section 1: ⭐ Recently Used
+                                    if !recent_models.is_empty() {
+                                        render_section(ui, "⭐ RECENTLY USED", &recent_models, &mut self.selected_model, &mut pending_switch);
                                     }
-                                }
+
+                                    // Section 2: 🏆 Frontier Models (for cloud)
+                                    if self.active_provider != "Local Ollama" {
+                                        let frontier_vec: Vec<String> = frontier_models.iter().map(|s| (*s).to_string()).collect();
+                                        render_section(ui, "🏆 FRONTIER MODELS", &frontier_vec, &mut self.selected_model, &mut pending_switch);
+
+                                        let budget_vec: Vec<String> = budget_models.iter().map(|s| (*s).to_string()).collect();
+                                        render_section(ui, "💰 BUDGET & FREE MODELS", &budget_vec, &mut self.selected_model, &mut pending_switch);
+                                    }
+
+                                    // Section 3/4: All Models Catalog
+                                    let all_header = if self.active_provider == "Local Ollama" {
+                                        "🖥 LOCAL OLLAMA MODELS"
+                                    } else {
+                                        "🌐 ALL AVAILABLE MODELS"
+                                    };
+                                    render_section(ui, all_header, &models, &mut self.selected_model, &mut pending_switch);
+
+                                    if let Some((prev, next)) = pending_switch {
+                                        self.switch_model(prev, next);
+                                    }
+                                });
                             });
-                        if previous_model != self.selected_model {
-                            self.switch_model(previous_model, self.selected_model.clone());
-                        }
 
                         // Right side: Send / Stop button
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1454,7 +1527,16 @@ impl AiHelperApp {
                             if let Some(p) = self.cloud_providers.iter_mut().find(|p| p.name == "OpenRouter") {
                                 p.api_key = if self.openrouter_key.is_empty() { None } else { Some(self.openrouter_key.clone()) };
                             }
-                            self.settings_saved_notice = Some("OpenRouter settings saved successfully!".to_owned());
+                            // Re-fetch dynamic model catalog
+                            let or_client = self.client.clone();
+                            let or_events = self.events_tx.clone();
+                            let or_key = self.openrouter_key.clone();
+                            self.runtime.spawn(async move {
+                                if let Ok(models) = or_client.fetch_openrouter_models(&or_key).await {
+                                    let _ = or_events.send(StreamEvent::OpenRouterModelsLoaded(models));
+                                }
+                            });
+                            self.settings_saved_notice = Some("OpenRouter settings saved & models refreshed!".to_owned());
                             self.log("INFO", "OpenRouter credentials saved to local SQLite");
                         }
 

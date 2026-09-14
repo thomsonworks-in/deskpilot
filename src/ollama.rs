@@ -34,6 +34,7 @@ pub enum StreamEvent {
     },
     PullFinished(String),
     ProvidersLoaded(Vec<crate::message::ProviderConfig>),
+    OpenRouterModelsLoaded(Vec<String>),
     EmbeddingReady {
         memory_id: u64,
         embedding: Vec<f32>,
@@ -217,6 +218,25 @@ impl OllamaClient {
         Ok(body.providers)
     }
 
+    pub async fn fetch_openrouter_models(&self, api_key: &str) -> Result<Vec<String>> {
+        let mut req = self.http.get("https://openrouter.ai/api/v1/models");
+        if !api_key.is_empty() {
+            req = req.header("Authorization", format!("Bearer {api_key}"));
+        }
+        let response = req.send().await.context("failed to fetch OpenRouter models")?;
+        let json: serde_json::Value = response.json().await.context("invalid OpenRouter models response")?;
+        let mut models = Vec::new();
+        if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
+            for item in data {
+                if let Some(id) = item.get("id").and_then(|id| id.as_str()) {
+                    models.push(id.to_owned());
+                }
+            }
+        }
+        models.sort();
+        Ok(models)
+    }
+
     pub async fn stream_cloud_chat(
         &self,
         base_url: &str,
@@ -225,7 +245,7 @@ impl OllamaClient {
         messages: &[Message],
         events: &mpsc::UnboundedSender<StreamEvent>,
         mut cancel: oneshot::Receiver<()>,
-        tools: ToolContext<'_>,
+        _tools: ToolContext<'_>,
     ) -> Result<()> {
         let _ = events.send(StreamEvent::Started);
         let history = messages.iter().map(|m| {

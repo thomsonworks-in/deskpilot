@@ -2,7 +2,7 @@
 name = "deskpilot"
 version = "0.1.0"
 edition = "2021"
-description = "A private, local-first desktop assistant powered by Ollama"
+description = "A private, ultra-fast, local-first desktop agent and assistant built in Rust"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/thomsonworks-in/deskpilot"
 readme = "README.md"

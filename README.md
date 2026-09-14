@@ -1,63 +1,87 @@
 # DeskPilot
 
-DeskPilot is a blazingly fast, private, local-first desktop agent and assistant built in pure Rust. It connects to local models via Ollama and provides agent execution, semantic vector memory, multi-project context management, and native OS integration with zero Electron or Chromium overhead.
+> **The ultra-fast, local-first autonomous AI desktop agent and workspace assistant built in pure Rust.**
+
+DeskPilot gives you the power of an autonomous AI agent running directly on your operating system. Whether you run 100% private local models (via runtimes like Ollama, llama.cpp, or vLLM) or route to frontier cloud reasoning models (Claude 3.7, DeepSeek-R1, GPT-4o via OpenRouter), DeskPilot gives you instant startup, autonomous file and shell execution, and persistent vector memory with **zero Electron or Chromium RAM bloat**.
+
+---
+
+## ⚡ Why DeskPilot? (Key Differentiators)
+
+- 🚀 **Blazing Native Performance (~30MB RAM):** Built entirely in Rust with `egui`/`eframe`. Launches in milliseconds and uses a fraction of the RAM of typical Electron or web-based AI clients.
+- 🔒 **100% Private, Local-First Architecture:** Run offline models directly on your hardware. Your files, embeddings, and chat history stay on your machine in encrypted local SQLite.
+- 🧠 **Persistent SQLite Vector Memory:** Built-in semantic retrieval and episodic scratchpads. DeskPilot recalls past project facts, user instructions, and technical context across reboots with zero lookup lag.
+- 🛠️ **Autonomous Agent Execution & Tools:** Built-in workspace file editing, PowerShell/Bash command execution, web browsing, git commit automation, and live **Claude Code / Codex `SKILL.md`** discovery.
+- 🌐 **Hybrid Local + Multi-Model Routing:** Switch on the fly between your **Local Engine** (e.g. Ollama, local models) and **Cloud Engines** (OpenRouter, DeepSeek API, Anthropic Claude, OpenAI).
+- 🖥️ **Native OS Integration:** System tray support, single-instance enforcement, and native workspace switching.
+
+---
 
 ## 🚀 Quick Install (Single-Line, Zero Dependencies)
 
-No Node.js, Rust, Python, or Git required for installation.
+No Node.js, Rust, Python, or Git required. Single binary installation.
 
 ### Windows (PowerShell):
 Open PowerShell and run:
-\\powershell
+```powershell
 irm https://raw.githubusercontent.com/thomsonworks-in/deskpilot/main/install.ps1 | iex
-\*This downloads the latest pre-compiled binary, installs it to \%LOCALAPPDATA%\DeskPilot\bin\, adds it to your PATH, and creates a Start Menu shortcut.*
+```
+*(Or from Command Prompt `cmd.exe`: `powershell -Command "irm https://raw.githubusercontent.com/thomsonworks-in/deskpilot/main/install.ps1 | iex"`)*  
+*Downloads the pre-compiled binary to `%LOCALAPPDATA%\DeskPilot\bin`, configures your PATH, and adds a Start Menu shortcut.*
 
 ### macOS & Linux (Terminal):
 Open Terminal and run:
-\\ash
+```bash
 curl -fsSL https://raw.githubusercontent.com/thomsonworks-in/deskpilot/main/install.sh | sh
-\*Supports Apple Silicon (M1/M2/M3/M4), Intel Mac, and x86_64/aarch64 Linux.*
+```
+*Supports Apple Silicon (M1/M2/M3/M4), Intel Macs, and x86_64/aarch64 Linux distributions.*
 
 ---
 
-## ⚡ Features
+## 🔌 Supported Engines & Models
 
-- **Blazing Native Performance:** Built with \egui\/\eframe\. Uses ~30MB RAM on idle and launches instantly.
-- **Autonomous Agent Execution:** Built-in tools for workspace file management, PowerShell/Bash command execution, and live skill loading.
-- **Local Semantic Vector Memory:** Stores durable memories, scratchpads, and embeddings in local SQLite with automatic semantic retrieval using Ollama embeddings.
-- **Multi-Project Workspaces:** Seamlessly switch between different project contexts and chat threads.
-- **Native OS Integration:** System tray support, single-instance enforcement via named pipes, and duplicate launch window focusing.
-- **Zero Cloud Leaks:** All requests, embeddings, and chat data remain 100% on your local machine.
-
----
-
-## 🛠️ Requirements (For Running)
-
-- [Ollama](https://ollama.com) running locally (\http://127.0.0.1:11434\).
-- Any locally pulled model (e.g. \qwen2.5:coder\, \deepseek-r1\, \llama3.2\).
-- Recommended embedding model: \qwen3-embedding:0.6b\ (automatic fallback to recency if not installed).
+| Mode | Supported Runtimes & Providers | Example Models |
+| :--- | :--- | :--- |
+| **Local (Private / Offline)** | Local runtimes such as [Ollama](https://ollama.com), local OpenAI-compatible runners | DeepSeek-R1 (1.5B–32B), Qwen 2.5 Coder, Llama 3.3, Mistral |
+| **Cloud (Frontier Reasoning)** | [OpenRouter](https://openrouter.ai), DeepSeek API, Anthropic, OpenAI | Claude 3.7 Sonnet, DeepSeek-V3 / R1, GPT-4o, Gemini 2.0 |
+| **Semantic Memory** | Local embedding engines (e.g. Ollama `qwen3-embedding:0.6b` or recent-fallback) | Zero-latency local vector similarity matching |
 
 ---
 
-## 💻 Development & Building from Source
+## 🛠️ Usage & Navigation
 
-If you have Rust installed and prefer building from source:
+- **💬 Chat View:** Clean conversational canvas with real-time streaming and collapsible reasoning/thinking steps.
+- **🌐 Provider Pill:** Toggle instantly in the bottom input bar between `🖥 Local Engine` and `⚡ Cloud / OpenRouter`.
+- **⚙ Settings & API Keys:** Configure your OpenRouter keys, default models, and view local runtime status.
+- **🛠 Skills Catalog:** Automatically loads custom workflows and agent skills from `<workspace>/.claude/skills` and user directories.
 
-\\ash
+---
+
+## 💻 Building From Source (Developers)
+
+If you have Rust installed:
+
+```bash
 git clone https://github.com/thomsonworks-in/deskpilot.git
 cd deskpilot
 cargo run --release
-\
+```
+
 To test:
-\\ash
+```bash
 cargo test
-\
+```
+
 ---
 
 ## 📂 Local Data & Privacy
 
 DeskPilot stores its local SQLite database at:
-- **Windows:** \%LOCALAPPDATA%\DeskPilot\deskpilot.db- **macOS/Linux:** \~/.deskpilot/deskpilot.db
+- **Windows:** `%LOCALAPPDATA%\DeskPilot\deskpilot.db`
+- **macOS/Linux:** `~/.deskpilot/deskpilot.db`
+
+All conversation logs, project contexts, vector embeddings, and API keys are stored locally.
+
 ---
 
 ## 📄 License
