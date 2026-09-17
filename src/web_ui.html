@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DeskPilot Studio • ThomsonWorks Autonomous Workspace</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        :root {
+            --tw-bg-dark: #08060d;
+            --tw-panel-dark: #100e17;
+            --tw-border-glass: rgba(170, 59, 255, 0.15);
+            --tw-accent-purple: #aa3bff;
+            --tw-accent-glow: #c084fc;
+        }
+        body { background-color: #08060d; color: #e5e4e7; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-thumb { background: #1c1829; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #2f2947; }
+        .glass-panel { background: rgba(16, 14, 23, 0.85); backdrop-filter: blur(14px); border: 1px solid rgba(170, 59, 255, 0.15); }
+        .active-tab { background: rgba(170, 59, 255, 0.14); color: #c084fc; border-left: 3px solid #aa3bff; }
+        .tab-btn { transition: all 0.15s ease; }
+        .tab-btn:hover { background: rgba(170, 59, 255, 0.08); color: #f8fafc; }
+        .btn-brand { background: linear-gradient(135deg, #aa3bff, #7e14ff); color: #fff; font-weight: 600; }
+        .btn-brand:hover { background: linear-gradient(135deg, #b95eff, #8a24ff); box-shadow: 0 0 15px rgba(170, 59, 255, 0.4); }
+    </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden select-none bg-[#08060d]">
+    <!-- Top Global App Bar (ThomsonWorks Branded) -->
+    <header class="flex items-center justify-between px-5 py-2.5 bg-[#100e17] border-b border-[#221f2d] z-20">
+        <div class="flex items-center space-x-4">
+            <div class="flex items-center space-x-3">
+                <!-- Official ThomsonWorks Geometric Polygon Logo Icon -->
+                <div class="w-7 h-7 flex items-center justify-center flex-shrink-0">
+                    <svg viewBox="0 0 48 46" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full filter drop-shadow">
+                        <path d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" fill="#aa3bff"/>
+                        <path d="M10.287 31.675h13.376V44.24l19.535-27.355H31.82c-1.842 0-2.912-2.081-1.842-3.579L37.458 2.835H10.933l-8.696 12.18h15.228c1.842 0 2.912 2.081 1.842 3.578l-7.48 10.471c-.536.748 0 1.788.92 1.788z" fill="#c084fc" opacity="0.85"/>
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xs font-bold tracking-wider uppercase text-white flex items-center gap-1.5">
+                        ThomsonWorks <span class="text-[#c084fc]">DeskPilot</span>
+                        <span class="text-[9px] px-1.5 py-0.5 rounded bg-purple-950/70 text-purple-300 border border-purple-800/80 font-mono font-normal">STUDIO</span>
+                    </h1>
+                    <p class="text-[10px] text-gray-400">Autonomous Desktop Agent • Unified Workspace Engine</p>
+                </div>
+            </div>
+
+            <div class="h-4 w-px bg-[#262335]"></div>
+
+            <!-- Workspace Selector -->
+            <div class="flex items-center space-x-2 bg-[#171520] border border-[#2d293d] rounded-lg px-2.5 py-1 text-xs text-gray-300">
+                <i class="fa-solid fa-folder-tree text-[#aa3bff] text-xs"></i>
+                <select id="project-select" onchange="switchProject(this.value)" class="bg-transparent border-none focus:outline-none text-xs text-gray-200 cursor-pointer">
+                    <option value="1">Workspace: Control</option>
+                    <option value="2">Workspace: DeskPilot</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Telemetry & Quick Indicators -->
+        <div class="flex items-center space-x-5 text-xs">
+            <div class="flex items-center space-x-2 text-slate-400">
+                <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="text-[11px] font-mono text-slate-300">Rust Daemon :31415</span>
+            </div>
+            <div class="flex items-center space-x-2 bg-[#171520] border border-[#2d293d] rounded-lg px-3 py-1">
+                <i class="fa-solid fa-microchip text-purple-400 text-xs"></i>
+                <span id="active-model-badge" class="text-[11px] font-mono text-[#c084fc]">Claude 3.7 / Ollama</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- App Body: 3 Columns (Nav, Main Studio, Right Inspector) -->
+    <div class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Navigation & Thread Rail -->
+        <aside class="w-64 bg-[#100e17] border-r border-[#221f2d] flex flex-col justify-between p-3 select-none">
+            <div class="space-y-4">
+                <!-- Navigation Modes -->
+                <nav class="space-y-1">
+                    <button onclick="switchView('chat')" id="nav-chat" class="tab-btn active-tab w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium text-left">
+                        <i class="fa-solid fa-terminal w-4 text-center"></i>
+                        <span>Live Agent Studio</span>
+                    </button>
+                    <button onclick="switchView('triggers')" id="nav-triggers" class="tab-btn w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 text-left">
+                        <i class="fa-solid fa-bolt-lightning w-4 text-center text-amber-400"></i>
+                        <span>Triggers & Automation</span>
+                    </button>
+                    <button onclick="switchView('mcp')" id="nav-mcp" class="tab-btn w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 text-left">
+                        <i class="fa-solid fa-puzzle-piece w-4 text-center text-[#c084fc]"></i>
+                        <span>MCP Plugins & Skills</span>
+                    </button>
+                    <button onclick="switchView('settings')" id="nav-settings" class="tab-btn w-full flex items-center space-x-3 px-3 py-2 rounded-lg text-xs font-medium text-slate-400 text-left">
+                        <i class="fa-solid fa-sliders w-4 text-center text-sky-400"></i>
+                        <span>Vault & Engine Keys</span>
+                    </button>
+                </nav>
+
+                <div class="border-t border-[#221f2d] pt-3">
+                    <div class="flex items-center justify-between px-2 mb-2">
+                        <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Sessions</span>
+                        <button onclick="newSession()" class="text-slate-400 hover:text-white text-xs"><i class="fa-solid fa-plus"></i></button>
+                    </div>
+                    <div class="space-y-1 overflow-y-auto max-h-56">
+                        <div class="p-2 rounded-md bg-[#181524] border border-[#2d293d] text-xs text-slate-200 cursor-pointer flex items-center justify-between">
+                            <span class="truncate">#42 • ThomsonWorks Studio</span>
+                            <span class="text-[9px] text-emerald-400">Active</span>
+                        </div>
+                        <div class="p-2 rounded-md text-slate-400 hover:bg-[#181524]/60 text-xs cursor-pointer flex items-center justify-between">
+                            <span class="truncate">#41 • Universal MCP Discovery</span>
+                            <span class="text-[9px] text-slate-500">Done</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workspace Safety Indicator -->
+            <div class="p-2.5 rounded-lg bg-[#15131f] border border-[#2d293d] text-[11px] text-slate-400 space-y-1">
+                <div class="flex items-center justify-between">
+                    <span class="flex items-center gap-1.5 text-emerald-400 font-semibold"><i class="fa-solid fa-shield-halved"></i> Safety Checkpoint</span>
+                    <span class="text-[9px] text-slate-400 font-mono">Git Auto</span>
+                </div>
+                <p class="text-[10px] text-slate-400">Time-travel rollback active. Zero data loss guarantee.</p>
+            </div>
+        </aside>
+
+        <!-- Main Workspace Dynamic View Container -->
+        <main class="flex-1 flex flex-col justify-between bg-[#08060d] overflow-hidden">
+
+            <!-- 1. LIVE AGENT STUDIO VIEW -->
+            <section id="view-chat" class="flex-1 flex flex-col justify-between p-6 max-w-5xl mx-auto w-full h-full overflow-hidden">
+                <!-- Chat Feed -->
+                <div id="messages" class="flex-1 overflow-y-auto space-y-4 pr-3">
+                    
+                    <!-- Agent Welcome Card -->
+                    <div class="glass-panel p-4 rounded-xl border border-[#2d293d] shadow-sm space-y-2">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <span class="text-base">🤖</span>
+                                <h3 class="text-xs font-bold text-white uppercase tracking-wider">DeskPilot Agent Online</h3>
+                            </div>
+                            <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-950 text-[#c084fc] border border-purple-800">ThomsonWorks Ready</span>
+                        </div>
+                        <p class="text-xs text-slate-300 leading-relaxed">
+                            Equipped with <span class="text-[#c084fc] font-mono">replace_file_content</span> surgical diffing, <span class="text-sky-300 font-mono">rollback_workspace</span>, universal <span class="text-purple-300 font-mono">SKILL.md</span> discovery, and <span class="text-amber-300 font-mono">repo_map</span> context compression.
+                        </p>
+                    </div>
+
+                    <!-- Example Live Thinking Box -->
+                    <div class="border border-[#3d2757] bg-[#160e24]/60 rounded-xl p-3 text-xs space-y-2">
+                        <div class="flex items-center justify-between cursor-pointer" onclick="toggleElement('thinking-body')">
+                            <span class="font-semibold text-[#c084fc] flex items-center gap-2">
+                                <i class="fa-solid fa-lightbulb"></i> Reasoning & Planning Stream (DeepSeek-R1 / Claude 3.7)
+                            </span>
+                            <span class="text-[10px] text-purple-300 font-mono">14 tokens/sec • Toggle</span>
+                        </div>
+                        <div id="thinking-body" class="text-slate-300 font-mono text-[11px] leading-relaxed border-t border-[#3d2757] pt-2">
+                            1. Analyzed workspace root: verified Rust tool harness<br>
+                            2. ThomsonWorks theming and vector icon synchronized.<br>
+                            3. Surgical replace_file_content enabled for maximum precision.
+                        </div>
+                    </div>
+
+                    <!-- Example Tool Activity Card -->
+                    <div class="border border-[#2d293d] bg-[#120f1c] rounded-xl p-3 text-xs space-y-2">
+                        <div class="flex items-center justify-between">
+                            <span class="font-semibold text-sky-400 flex items-center gap-2">
+                                <i class="fa-solid fa-code-compare"></i> Tool: replace_file_content (src/storage.rs)
+                            </span>
+                            <span class="text-[10px] text-emerald-400 font-mono">Success (8ms)</span>
+                        </div>
+                        <div class="bg-black/60 rounded-lg p-2 font-mono text-[11px] overflow-x-auto text-slate-300">
+                            <span class="text-red-400">- old: full overwrite</span><br>
+                            <span class="text-emerald-400">+ new: surgical chunk replacement matching exact target context</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input Action Bar -->
+                <div class="pt-3">
+                    <div class="flex items-center justify-between px-1 mb-2 text-[11px] text-slate-400">
+                        <div class="flex items-center space-x-2">
+                            <button onclick="sendQuickCommand('repo_map')" class="px-2.5 py-1 rounded bg-[#171520] border border-[#2d293d] hover:border-[#aa3bff] hover:text-white transition">🗺️ repo_map</button>
+                            <button onclick="sendQuickCommand('rollback_workspace')" class="px-2.5 py-1 rounded bg-[#171520] border border-[#2d293d] hover:border-amber-400 hover:text-amber-400 transition">🔄 rollback</button>
+                            <button onclick="sendQuickCommand('git status')" class="px-2.5 py-1 rounded bg-[#171520] border border-[#2d293d] hover:border-[#aa3bff] hover:text-white transition">🌿 git status</button>
+                        </div>
+                        <span class="text-[10px] text-slate-400 font-mono">Shift+Enter for newline</span>
+                    </div>
+
+                    <div class="flex items-center glass-panel border border-[#3b2d54] rounded-xl p-2.5 focus-within:border-[#aa3bff] shadow-xl transition-all">
+                        <textarea id="prompt-input" rows="1" placeholder="Instruct DeskPilot or run slash command (/plan, /test, /rollback)..."
+                            class="flex-1 bg-transparent px-3 py-1.5 text-sm text-white focus:outline-none placeholder-gray-500 resize-none"
+                            onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendMessage(); }"></textarea>
+                        <button onclick="sendMessage()" class="btn-brand text-xs px-5 py-2.5 rounded-lg shadow-md transition-all flex items-center gap-1.5">
+                            <span>Execute</span>
+                            <i class="fa-solid fa-arrow-up text-[10px]"></i>
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. TRIGGERS & SCHEDULES AUTOMATION VIEW -->
+            <section id="view-triggers" class="hidden flex-1 p-8 max-w-5xl mx-auto w-full overflow-y-auto space-y-6">
+                <div class="flex items-center justify-between border-b border-[#221f2d] pb-4">
+                    <div>
+                        <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-bolt-lightning text-amber-400"></i> Triggers & Automated Actions
+                        </h2>
+                        <p class="text-xs text-slate-400">Recurring cron schedules, file change watchers, and inbound webhooks.</p>
+                    </div>
+                    <button onclick="toggleElement('create-trigger-modal')" class="btn-brand text-xs px-4 py-2 rounded-lg">
+                        + New Trigger
+                    </button>
+                </div>
+
+                <!-- Active Trigger Cards -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Cron Trigger -->
+                    <div class="glass-panel p-4 rounded-xl border border-[#2d293d] space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-950 text-blue-400 border border-blue-800">SCHEDULE / CRON</span>
+                            <span class="text-xs text-emerald-400 font-mono">Active</span>
+                        </div>
+                        <h3 class="text-sm font-semibold text-white">Periodic Health & Test Monitor</h3>
+                        <p class="text-xs text-slate-400 font-mono">Interval: */30 * * * * (Every 30 min)</p>
+                        <div class="text-xs text-slate-300 bg-[#14111f] p-2 rounded border border-[#2d293d]">
+                            <strong>Action:</strong> Run `cargo check` and report any compiler warnings to chat.
+                        </div>
+                    </div>
+
+                    <!-- File Watcher Trigger -->
+                    <div class="glass-panel p-4 rounded-xl border border-[#2d293d] space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-950 text-[#c084fc] border border-purple-800">FILE WATCHER</span>
+                            <span class="text-xs text-emerald-400 font-mono">Active</span>
+                        </div>
+                        <h3 class="text-sm font-semibold text-white">Auto Test on Code Save</h3>
+                        <p class="text-xs text-slate-400 font-mono">Path: src/**/*.rs</p>
+                        <div class="text-xs text-slate-300 bg-[#14111f] p-2 rounded border border-[#2d293d]">
+                            <strong>Action:</strong> Run `cargo test` automatically and trigger rollback if regressions occur.
+                        </div>
+                    </div>
+
+                    <!-- Inbound Webhook Trigger -->
+                    <div class="glass-panel p-4 rounded-xl border border-[#2d293d] space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-950 text-amber-400 border border-amber-800">WEBHOOK</span>
+                            <span class="text-xs text-emerald-400 font-mono">Ready</span>
+                        </div>
+                        <h3 class="text-sm font-semibold text-white">GitHub Inbound Webhook</h3>
+                        <p class="text-xs text-slate-400 font-mono">POST /api/webhook/github-pr</p>
+                        <div class="text-xs text-slate-300 bg-[#14111f] p-2 rounded border border-[#2d293d]">
+                            <strong>Action:</strong> Prompt Claude 3.7 to review PR diff and generate report.
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 3. MCP PLUGINS & SKILLS VIEW -->
+            <section id="view-mcp" class="hidden flex-1 p-8 max-w-5xl mx-auto w-full overflow-y-auto space-y-6">
+                <div class="border-b border-[#221f2d] pb-4">
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-puzzle-piece text-[#c084fc]"></i> MCP Servers & Claude Skills
+                    </h2>
+                    <p class="text-xs text-slate-400">Connect to hundreds of Anthropic Model Context Protocol community tools and Claude/Antigravity skills.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="glass-panel p-4 rounded-xl border border-[#2d293d] space-y-2">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-white">PostgreSQL MCP Server</h3>
+                            <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Connected</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Direct SQL schema introspection, read queries, and database health metrics.</p>
+                    </div>
+
+                    <div class="glass-panel p-4 rounded-xl border border-[#2d293d] space-y-2">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-white">GitHub MCP Server</h3>
+                            <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800">Connected</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Read PRs, issues, branches, and automate commit pushing.</p>
+                    </div>
+
+                    <div class="glass-panel p-4 rounded-xl border border-[#2d293d] space-y-2">
+                        <div class="flex items-center justify-between">
+                            <h3 class="text-sm font-semibold text-white">Claude SKILL.md Scanner</h3>
+                            <span class="text-[10px] px-2 py-0.5 rounded bg-purple-950 text-[#c084fc] border border-purple-800">4 Skills Found</span>
+                        </div>
+                        <p class="text-xs text-slate-400">Scanned .deskpilot/skills, .claude/skills, and .gemini/antigravity.</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 4. VAULT & SETTINGS VIEW -->
+            <section id="view-settings" class="hidden flex-1 p-8 max-w-4xl mx-auto w-full overflow-y-auto space-y-6">
+                <div class="border-b border-[#221f2d] pb-4">
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-sky-400"></i> Engine Vault & API Configuration
+                    </h2>
+                    <p class="text-xs text-slate-400">Manage OpenRouter, Anthropic, and local Ollama credentials stored securely in local SQLite.</p>
+                </div>
+
+                <div class="glass-panel p-6 rounded-xl border border-[#2d293d] space-y-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Active Execution Engine</label>
+                        <select id="setting-provider" class="w-full bg-[#171520] border border-[#2d293d] rounded-lg p-2.5 text-xs text-white">
+                            <option value="OpenRouter">OpenRouter (Claude 3.7, DeepSeek-R1, GPT-4o)</option>
+                            <option value="Local Ollama">Local Ollama (100% Offline & Private)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">OpenRouter API Key</label>
+                        <input id="setting-or-key" type="password" placeholder="sk-or-v1-..." class="w-full bg-[#171520] border border-[#2d293d] rounded-lg p-2.5 text-xs text-white" />
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Default Model</label>
+                        <input id="setting-or-model" type="text" value="anthropic/claude-3.7-sonnet" class="w-full bg-[#171520] border border-[#2d293d] rounded-lg p-2.5 text-xs text-white" />
+                    </div>
+
+                    <button onclick="saveSettings()" class="btn-brand text-xs px-6 py-2.5 rounded-lg transition-all">
+                        Save Configuration
+                    </button>
+                    <span id="save-status" class="text-xs text-emerald-400 ml-3 hidden font-mono">Saved to SQLite!</span>
+                </div>
+            </section>
+        </main>
+
+        <!-- Right Telemetry & Context Inspector -->
+        <aside class="w-72 bg-[#100e17] border-l border-[#221f2d] p-4 space-y-5 overflow-y-auto hidden xl:block">
+            <!-- Adaptive Memory Card -->
+            <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                    <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Adaptive Working Memory</span>
+                    <span class="text-[9px] font-mono text-[#c084fc]">O(1)</span>
+                </div>
+                <div class="bg-[#171520] border border-[#2d293d] p-3 rounded-lg text-xs space-y-1 text-slate-300">
+                    <p class="font-semibold text-slate-200">Active Scratchpad:</p>
+                    <ul class="list-disc pl-4 text-[11px] text-slate-400 space-y-1">
+                        <li>Project rule: Use replace_file_content</li>
+                        <li>Database: SQLite WAL mode</li>
+                        <li>Git repo clean: branch main</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Open Tasks Card -->
+            <div class="space-y-2">
+                <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Active Tasks</span>
+                <div class="space-y-1.5">
+                    <div class="flex items-center space-x-2 text-xs text-slate-300 bg-[#171520] p-2 rounded border border-[#2d293d]">
+                        <input type="checkbox" checked class="accent-purple-500" />
+                        <span class="line-through text-slate-400">ThomsonWorks Design & Icon</span>
+                    </div>
+                    <div class="flex items-center space-x-2 text-xs text-slate-300 bg-[#171520] p-2 rounded border border-[#2d293d]">
+                        <input type="checkbox" checked class="accent-purple-500" />
+                        <span class="line-through text-slate-400">Universal MCP & Skills</span>
+                    </div>
+                    <div class="flex items-center space-x-2 text-xs text-slate-300 bg-[#171520] p-2 rounded border border-[#2d293d]">
+                        <input type="checkbox" class="accent-purple-500" />
+                        <span>Triggers & Automation Engine</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- UI Logic Scripts -->
+    <script>
+        function switchView(viewName) {
+            ['chat', 'triggers', 'mcp', 'settings'].forEach(v => {
+                const el = document.getElementById('view-' + v);
+                const nav = document.getElementById('nav-' + v);
+                if (el) el.classList.toggle('hidden', v !== viewName);
+                if (nav) nav.classList.toggle('active-tab', v === viewName);
+            });
+        }
+
+        function toggleElement(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('hidden');
+        }
+
+        function sendQuickCommand(cmd) {
+            document.getElementById('prompt-input').value = cmd;
+            sendMessage();
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('prompt-input');
+            const text = input.value.trim();
+            if (!text) return;
+            
+            const messages = document.getElementById('messages');
+            const userMsg = document.createElement('div');
+            userMsg.className = 'p-3 rounded-xl bg-purple-950/40 border border-purple-800/60 text-xs ml-auto max-w-xl text-purple-200 shadow-sm';
+            userMsg.innerText = text;
+            messages.appendChild(userMsg);
+            input.value = '';
+            messages.scrollTop = messages.scrollHeight;
+
+            try {
+                const res = await fetch('/api/message', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: text })
+                });
+                const reply = document.createElement('div');
+                reply.className = 'p-3 rounded-xl bg-[#171520] border border-[#2d293d] text-xs max-w-xl text-[#c084fc] font-mono shadow-sm flex items-center gap-2';
+                reply.innerHTML = '<span class="animate-spin text-sm">⚙</span> <span>Dispatched to DeskPilot daemon...</span>';
+                messages.appendChild(reply);
+                messages.scrollTop = messages.scrollHeight;
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function saveSettings() {
+            const or_key = document.getElementById('setting-or-key').value;
+            const or_model = document.getElementById('setting-or-model').value;
+            const provider = document.getElementById('setting-provider').value;
+            try {
+                await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ openrouter_key: or_key, openrouter_model: or_model, active_provider: provider })
+                });
+                const status = document.getElementById('save-status');
+                status.classList.remove('hidden');
+                setTimeout(() => status.classList.add('hidden'), 2500);
+            } catch (err) {
+                console.error(err);
+            }
+        }
+    </script>
+</body>
+</html>
