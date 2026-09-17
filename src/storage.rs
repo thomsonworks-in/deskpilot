@@ -90,6 +90,7 @@ impl Storage {
              CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY, title TEXT NOT NULL, done INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL DEFAULT 1, content TEXT NOT NULL, embedding TEXT NOT NULL DEFAULT '[]', confidence REAL NOT NULL DEFAULT 1.0, access_count INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
              CREATE TABLE IF NOT EXISTS scratchpad (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL DEFAULT 1, note TEXT NOT NULL, decay_score REAL NOT NULL DEFAULT 1.0, created_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS triggers (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL, trigger_type TEXT NOT NULL, schedule_expr TEXT NOT NULL, action_type TEXT NOT NULL, action_payload TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, last_run INTEGER NOT NULL DEFAULT 0);
              CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL);"
         )?;
         
@@ -324,4 +325,45 @@ impl Storage {
         let serialized = serde_json::to_string(&recents)?;
         self.set_setting("recent_models", &serialized)
     }
+
+    pub fn get_triggers(&self, project_id: u64) -> Result<Vec<TriggerItem>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT id, project_id, name, trigger_type, schedule_expr, action_type, action_payload, enabled, last_run FROM triggers WHERE project_id = ?1 ORDER BY id DESC")?;
+        let items = stmt.query_map([project_id as i64], |row| {
+            Ok(TriggerItem {
+                id: row.get::<_, i64>(0)? as u64,
+                project_id: row.get::<_, i64>(1)? as u64,
+                name: row.get(2)?,
+                trigger_type: row.get(3)?,
+                schedule_expr: row.get(4)?,
+                action_type: row.get(5)?,
+                action_payload: row.get(6)?,
+                enabled: row.get::<_, i64>(7)? != 0,
+                last_run: row.get::<_, i64>(8)? as u64,
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(items)
+    }
+
+    pub fn add_trigger(&self, project_id: u64, name: &str, trigger_type: &str, schedule_expr: &str, action_type: &str, action_payload: &str) -> Result<()> {
+        let conn = self.connection()?;
+        conn.execute(
+            "INSERT INTO triggers(project_id, name, trigger_type, schedule_expr, action_type, action_payload, enabled, last_run) VALUES(?1, ?2, ?3, ?4, ?5, ?6, 1, 0)",
+            params![project_id as i64, name, trigger_type, schedule_expr, action_type, action_payload],
+        )?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TriggerItem {
+    pub id: u64,
+    pub project_id: u64,
+    pub name: String,
+    pub trigger_type: String,
+    pub schedule_expr: String,
+    pub action_type: String,
+    pub action_payload: String,
+    pub enabled: bool,
+    pub last_run: u64,
 }

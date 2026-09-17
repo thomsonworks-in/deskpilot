@@ -30,10 +30,17 @@ struct ToolFunction {
 }
 
 pub fn discover_skills(workspace: &Path) -> Vec<Skill> {
-    let mut roots = vec![workspace.join(".claude").join("skills")];
+    let mut roots = vec![
+        workspace.join(".deskpilot").join("skills"),
+        workspace.join(".claude").join("skills"),
+        workspace.join(".gemini").join("skills"),
+        workspace.join(".antigravity").join("skills"),
+    ];
     if let Some(home) = std::env::var_os("USERPROFILE").map(PathBuf::from) {
+        roots.push(home.join(".deskpilot").join("skills"));
         roots.push(home.join(".claude").join("skills"));
         roots.push(home.join(".codex").join("skills"));
+        roots.push(home.join(".gemini").join("antigravity").join("skills"));
     }
     let mut skills = Vec::new();
     for root in roots {
@@ -86,6 +93,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
         definition("powershell", "Run a non-destructive PowerShell command in the workspace.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})),
         definition("bash", "Run a non-destructive bash command in the workspace when bash is installed.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})),
         definition("write_file", "Write text content to a file in the workspace, overwriting it. Path must be relative to workspace.", serde_json::json!({"type":"object","required":["path", "content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}})),
+        definition("replace_file_content", "Surgically edit an existing file by finding exact target_content and replacing it with replacement_content. Avoids full file overwrites.", serde_json::json!({"type":"object","required":["path", "target_content", "replacement_content"],"properties":{"path":{"type":"string"},"target_content":{"type":"string"},"replacement_content":{"type":"string"}}})),
+        definition("rollback_workspace", "Rollback files to the last git checkpoint before agent modifications.", serde_json::json!({"type":"object","properties":{}})),
+        definition("repo_map", "Generate a condensed structural summary of key code files, definitions, and workspace tree in under 2000 tokens.", serde_json::json!({"type":"object","properties":{}})),
         definition("git_commit", "Commit all current changes to git with a message.", serde_json::json!({"type":"object","required":["message"],"properties":{"message":{"type":"string"}}})),
         definition("self_update", "Rebuild and restart the DeskPilot application.", serde_json::json!({"type":"object","properties":{}})),
     ]
@@ -190,6 +200,51 @@ pub async fn execute(
             let path = safe_new_path(workspace, requested)?;
             tokio::fs::write(&path, content).await.context("failed to write file")?;
             Ok(format!("file {} written successfully", path.display()))
+        }
+        "replace_file_content" => {
+            let requested = required(arguments, "path")?;
+            let target = required(arguments, "target_content")?;
+            let replacement = required(arguments, "replacement_content")?;
+            let path = safe_path(workspace, requested)?;
+            let current = tokio::fs::read_to_string(&path).await.context("failed to read file for diff edit")?;
+            if !current.contains(target) {
+                return Err(anyhow!("target_content not found in {}", path.display()));
+            }
+            let count = current.matches(target).count();
+            if count > 1 {
+                return Err(anyhow!("target_content occurs {count} times in {}; specify more surrounding context lines for unique match", path.display()));
+            }
+            let updated = current.replacen(target, replacement, 1);
+            tokio::fs::write(&path, updated).await.context("failed to write updated file")?;
+            Ok(format!("successfully replaced chunk in {}", path.display()))
+        }
+        "rollback_workspace" => {
+            run_shell("git", &["checkout", "--", "."], "", workspace).await?;
+            run_shell("git", &["clean", "-fd"], "", workspace).await?;
+            Ok("workspace successfully rolled back to clean git checkpoint".to_owned())
+        }
+        "repo_map" => {
+            let mut summary = Vec::new();
+            let mut stack = vec![(workspace.to_path_buf(), 0_usize)];
+            while let Some((dir, depth)) = stack.pop() {
+                if depth > 3 || summary.len() > 60 { break; }
+                if let Ok(mut entries) = tokio::fs::read_dir(&dir).await {
+                    while let Ok(Some(entry)) = entries.next_entry().await {
+                        let path = entry.path();
+                        let name = entry.file_name().to_string_lossy().into_owned();
+                        if name.starts_with('.') || name == "target" || name == "node_modules" { continue; }
+                        if path.is_dir() {
+                            stack.push((path, depth + 1));
+                        } else if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                            if ["rs", "toml", "json", "py", "ts", "js", "md"].contains(&ext) {
+                                let rel = path.strip_prefix(workspace).unwrap_or(&path).display().to_string();
+                                summary.push(format!("- {rel}"));
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(format!("WORKSPACE STRUCTURE (Top files):\n{}", summary.join("\n")))
         }
         "git_commit" => {
             let message = required(arguments, "message")?;
