@@ -8,10 +8,9 @@ repository = "https://github.com/thomsonworks-in/deskpilot"
 readme = "README.md"
 
 [dependencies]
-eframe = { version = "0.31", features = ["default"] }
-egui = "0.31"
-egui_commonmark = { version = "0.20", default-features = false }
 tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+tokio-stream = "0.1"
 reqwest = { version = "0.12", features = ["stream", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -28,3 +27,4 @@ tokio-stream = "0.1"
 windows-sys = { version = "0.59", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
+

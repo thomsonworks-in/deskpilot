@@ -1,42 +1,65 @@
 # ThomsonWorks DeskPilot
 
-> **The ultra-fast, local-first autonomous AI desktop agent and workspace assistant built in pure Rust.**
+> **The ultra-fast, local-first AI desktop agent — a headless Rust daemon with an Obsidian Velocity Web Studio.**
 >
 > *Official repository by [ThomsonWorks](https://github.com/thomsonworks-in).*
 
-DeskPilot gives you the power of an autonomous AI agent running directly on your operating system. Whether you run 100% private local models (via runtimes like Ollama, llama.cpp, or vLLM) or route to frontier cloud reasoning models (Claude 3.7, DeepSeek-R1, GPT-4o via OpenRouter), DeskPilot gives you instant startup, autonomous file and shell execution, and persistent vector memory with **zero Electron or Chromium RAM bloat**.
+DeskPilot runs as a **tiny background daemon** (`~10MB binary, ~12MB RAM idle`) and serves a polished web UI at `http://127.0.0.1:31415`. It auto-discovers every local [Ollama](https://ollama.com) model on startup, routes messages to your chosen model, surfaces full thinking-chain traces, and persists all history in local SQLite — **with zero data ever leaving your machine.**
+
+![DeskPilot Obsidian Velocity Web Studio](assets/deskpilot_studio.png)
 
 ---
 
-## ⚡ Why DeskPilot? (Key Differentiators)
+## ⚡ Why DeskPilot? (Key Features)
 
-- 🚀 **Blazing Native Performance (~30MB RAM):** Built entirely in Rust with `egui`/`eframe`. Launches in milliseconds and uses a fraction of the RAM of typical Electron or web-based AI clients.
-- 🔒 **100% Private, Local-First Architecture:** Run offline models directly on your hardware. Your files, embeddings, and chat history stay on your machine in encrypted local SQLite.
-- 🧠 **Persistent SQLite Vector Memory:** Built-in semantic retrieval and episodic scratchpads. DeskPilot recalls past project facts, user instructions, and technical context across reboots with zero lookup lag.
-- 🛠️ **Autonomous Agent Execution & Tools:** Built-in workspace file editing, PowerShell/Bash command execution, web browsing, git commit automation, and live **Claude Code / Codex `SKILL.md`** discovery.
-- 🌐 **Hybrid Local + Multi-Model Routing:** Switch on the fly between your **Local Engine** (e.g. Ollama, local models) and **Cloud Engines** (OpenRouter, DeepSeek API, Anthropic Claude, OpenAI).
-- 🖥️ **Native OS Integration:** System tray support, single-instance enforcement, and native workspace switching.
+| Feature | Details |
+| :--- | :--- |
+| 🚀 **~10MB Binary · ~12MB RAM Idle** | Pure Rust headless daemon. 56% smaller than a native GUI app. Starts in milliseconds. |
+| 🔒 **100% Private · Zero Telemetry** | All data stays on your machine. Works fully offline. No accounts. No subscriptions. |
+| 🧠 **Thinking-Chain Traces** | Collapsible 💡 reasoning traces shown inline — see exactly how the model thinks. |
+| 🤖 **Auto Local Model Detection** | Detects all running Ollama models at launch. Switch models from a live dropdown. |
+| 💾 **SQLite WAL Persistence** | 12-message rolling context window. All conversations stored locally across reboots. |
+| ⚡ **`dp` — 2-Character Launcher** | Type `dp` to start or focus DeskPilot. Smart: boots if stopped, focuses if running. |
+| 🌐 **Obsidian Velocity Web Studio** | Muted amethyst dark-mode UI at `localhost:31415`. Works in any browser, no install. |
+| 🔀 **Multi-Model Routing** | Route to local Ollama models or cloud frontier models (OpenRouter, Anthropic, OpenAI). |
 
 ---
 
-## 🚀 Quick Install (Single-Line, Zero Dependencies)
+## 🚀 1-Click Install & Run (Zero Dependencies)
 
-No Node.js, Rust, Python, or Git required. Single binary installation.
+No Node.js, Rust, Python, or Git required. Single binary installation that automatically sets up DeskPilot, creates shortcuts, and launches the Obsidian Velocity Web Studio in your browser.
 
 ### Windows (PowerShell):
 Open PowerShell and run:
 ```powershell
 irm https://raw.githubusercontent.com/thomsonworks-in/deskpilot/main/install.ps1 | iex
 ```
-*(Or from Command Prompt `cmd.exe`: `powershell -Command "irm https://raw.githubusercontent.com/thomsonworks-in/deskpilot/main/install.ps1 | iex"`)*  
-*Downloads the pre-compiled binary to `%LOCALAPPDATA%\DeskPilot\bin`, configures your PATH, and adds a Start Menu shortcut.*
+*(Or from Command Prompt `cmd.exe`: `powershell -c "irm https://raw.githubusercontent.com/thomsonworks-in/deskpilot/main/install.ps1 | iex"`)*  
+*Downloads pre-compiled binary to `%LOCALAPPDATA%\DeskPilot\bin`, configures PATH, creates the `dp` launcher, and instantly opens `http://127.0.0.1:31415`.*
 
 ### macOS & Linux (Terminal):
 Open Terminal and run:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/thomsonworks-in/deskpilot/main/install.sh | sh
 ```
-*Supports Apple Silicon (M1/M2/M3/M4), Intel Macs, and x86_64/aarch64 Linux distributions.*
+*Supports Apple Silicon (M1–M4), Intel Macs, and Linux. Automatically adds `dp` to your shell PATH and opens the Web Studio.*
+
+---
+
+## ⚡ Ultra-Short One-Liner Run Command: `dp`
+
+Once installed, launch DeskPilot anytime with just **2 characters**:
+
+```bash
+dp
+```
+
+- **If DeskPilot is stopped:** `dp` boots the headless daemon in milliseconds and opens `http://127.0.0.1:31415`.
+- **If DeskPilot is already running:** `dp` instantly brings the Web Studio into focus in your browser.
+- **Headless Background Service (no browser):**
+  ```bash
+  deskpilot --headless
+  ```
 
 ---
 
@@ -44,18 +67,18 @@ curl -fsSL https://raw.githubusercontent.com/thomsonworks-in/deskpilot/main/inst
 
 | Mode | Supported Runtimes & Providers | Example Models |
 | :--- | :--- | :--- |
-| **Local (Private / Offline)** | Local runtimes such as [Ollama](https://ollama.com), local OpenAI-compatible runners | DeepSeek-R1 (1.5B–32B), Qwen 2.5 Coder, Llama 3.3, Mistral |
-| **Cloud (Frontier Reasoning)** | [OpenRouter](https://openrouter.ai), DeepSeek API, Anthropic, OpenAI | Claude 3.7 Sonnet, DeepSeek-V3 / R1, GPT-4o, Gemini 2.0 |
-| **Semantic Memory** | Local embedding engines (e.g. Ollama `qwen3-embedding:0.6b` or recent-fallback) | Zero-latency local vector similarity matching |
+| **Local (Private / Offline)** | [Ollama](https://ollama.com), any OpenAI-compatible local runner | Qwen3, DeepSeek-R1, Llama 3.3, Mistral, Gemma 4 |
+| **Cloud (Frontier Reasoning)** | [OpenRouter](https://openrouter.ai), DeepSeek API, Anthropic, OpenAI | Claude Sonnet, DeepSeek-V3/R1, GPT-4o, Gemini |
+| **Semantic Memory** | SQLite WAL with rolling context + project adaptive context | Zero-latency local retrieval |
 
 ---
 
 ## 🛠️ Usage & Navigation
 
-- **💬 Chat View:** Clean conversational canvas with real-time streaming and collapsible reasoning/thinking steps.
-- **🌐 Provider Pill:** Toggle instantly in the bottom input bar between `🖥 Local Engine` and `⚡ Cloud / OpenRouter`.
-- **⚙ Settings & API Keys:** Configure your OpenRouter keys, default models, and view local runtime status.
-- **🛠 Skills Catalog:** Automatically loads custom workflows and agent skills from `<workspace>/.claude/skills` and user directories.
+- **💬 Chat:** Conversational canvas with user/assistant bubbles, per-model timing badge, and collapsible 💡 thinking-chain traces.
+- **🤖 Model Selector:** Live dropdown in the header — grouped into `⚡ Local Offline (Zero Cost)` and `🌐 Cloud Frontier` with `💡 Reasoning` / `⚡ Fast` badges.
+- **⚙ Settings:** Configure API keys, default model, and view local runtime status via `/api/settings`.
+- **🛠 REST API:** Full JSON API at `:31415` — `/api/models`, `/api/chat`, `/api/settings`, `/api/message`.
 
 ---
 

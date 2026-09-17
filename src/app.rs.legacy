@@ -542,7 +542,17 @@ impl AiHelperApp {
             ))];
             contextual_history.extend(history);
 
-            if active_provider != "Local Ollama" {
+            let is_local = active_provider == "Local Ollama" 
+                || active_provider == "Local Ollama (Offline)" 
+                || cloud_providers.iter().find(|p| p.name == active_provider).map(|p| p.name.to_lowercase().contains("ollama") || p.base_url.contains("11434")).unwrap_or(false);
+
+            let model = if is_local && (model.is_empty() || model.starts_with("anthropic/") || model.starts_with("openai/")) {
+                "ornith:9b".to_string()
+            } else {
+                model
+            };
+
+            if !is_local {
                 if let Some(provider) = cloud_providers.iter().find(|p| p.name == active_provider) {
                     let api_key = provider.api_key.as_deref().unwrap_or("sk-local");
                     let _ = client.stream_cloud_chat(

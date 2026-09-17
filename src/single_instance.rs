@@ -5,7 +5,13 @@ pub struct InstanceGuard(SingleInstance);
 pub fn acquire_or_focus() -> Option<InstanceGuard> {
     let instance = SingleInstance::new("VertexInfinity.DeskPilot.SingleInstance").ok()?;
     if !instance.is_single() {
-        focus_existing_window();
+        println!("DeskPilot daemon is already running on http://127.0.0.1:31415");
+        #[cfg(windows)]
+        let _ = std::process::Command::new("cmd").args(["/C", "start", "http://127.0.0.1:31415"]).spawn();
+        #[cfg(target_os = "macos")]
+        let _ = std::process::Command::new("open").arg("http://127.0.0.1:31415").spawn();
+        #[cfg(target_os = "linux")]
+        let _ = std::process::Command::new("xdg-open").arg("http://127.0.0.1:31415").spawn();
         return None;
     }
     Some(InstanceGuard(instance))
@@ -16,26 +22,3 @@ impl Drop for InstanceGuard {
         let _ = &self.0;
     }
 }
-
-#[cfg(windows)]
-fn focus_existing_window() {
-    use std::ptr;
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        FindWindowW, SetForegroundWindow, ShowWindow, SW_RESTORE,
-    };
-
-    let title = "DeskPilot"
-        .encode_utf16()
-        .chain(std::iter::once(0))
-        .collect::<Vec<_>>();
-    let window = unsafe { FindWindowW(ptr::null(), title.as_ptr()) };
-    if !window.is_null() {
-        unsafe {
-            ShowWindow(window, SW_RESTORE);
-            SetForegroundWindow(window);
-        }
-    }
-}
-
-#[cfg(not(windows))]
-fn focus_existing_window() {}

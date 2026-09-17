@@ -40,12 +40,32 @@ if (!(Test-Path $InstallDir)) {
 }
 
 $TempZip = Join-Path $env:TEMP 'deskpilot-setup.zip'
-Write-Host ('Downloading DeskPilot (' + $ZipName + ')...') -ForegroundColor Cyan
-Invoke-WebRequest -Uri $DownloadUrl -OutFile $TempZip
+$Downloaded = $false
+try {
+    Write-Host ('Downloading DeskPilot (' + $ZipName + ')...') -ForegroundColor Cyan
+    Invoke-WebRequest -Uri $DownloadUrl -OutFile $TempZip
+    Write-Host 'Extracting...' -ForegroundColor Gray
+    Expand-Archive -Path $TempZip -DestinationPath $InstallDir -Force
+    Remove-Item -Force $TempZip
+    $Downloaded = $true
+} catch {
+    Write-Host "GitHub release asset download failed. Checking for local binary..." -ForegroundColor Yellow
+    $LocalExe = Join-Path $PSScriptRoot 'target\debug\deskpilot.exe'
+    if (Test-Path $LocalExe) {
+        Copy-Item -Path $LocalExe -Destination (Join-Path $InstallDir $BinaryName) -Force
+        $Downloaded = $true
+        Write-Host "Installed local DeskPilot binary." -ForegroundColor Green
+    } else {
+        throw "Could not download or locate deskpilot binary: $_"
+    }
+}
 
-Write-Host 'Extracting...' -ForegroundColor Gray
-Expand-Archive -Path $TempZip -DestinationPath $InstallDir -Force
-Remove-Item -Force $TempZip
+# Create short 'dp' command runner for CMD and PowerShell
+$DpCmd = Join-Path $InstallDir 'dp.cmd'
+'@echo off' + "`r`n" + 'powershell -NoProfile -ExecutionPolicy Bypass -Command "if (Get-Process deskpilot -ErrorAction SilentlyContinue) { Start-Process ''http://127.0.0.1:31415'' } else { Start-Process -FilePath ''%~dp0deskpilot.exe'' -WindowStyle Hidden; Start-Sleep -Milliseconds 600; Start-Process ''http://127.0.0.1:31415'' }"' | Out-File -FilePath $DpCmd -Encoding ascii -Force
+
+$DpPs1 = Join-Path $InstallDir 'dp.ps1'
+'if (Get-Process deskpilot -ErrorAction SilentlyContinue) { Start-Process ''http://127.0.0.1:31415'' } else { Start-Process -FilePath (Join-Path $PSScriptRoot ''deskpilot.exe'') -WindowStyle Hidden; Start-Sleep -Milliseconds 600; Start-Process ''http://127.0.0.1:31415'' }' | Out-File -FilePath $DpPs1 -Encoding ascii -Force
 
 $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
 if ($UserPath -notlike ('*' + $InstallDir + '*')) {
@@ -65,7 +85,16 @@ try {
     Write-Host 'Created Start Menu shortcut.' -ForegroundColor Gray
 } catch {}
 
+# Launch DeskPilot daemon in background and open Web Studio
+$ExePath = Join-Path $InstallDir $BinaryName
+Write-Host 'Launching DeskPilot Headless Daemon & Studio...' -ForegroundColor Cyan
+Start-Process -FilePath $ExePath -WindowStyle Hidden
+Start-Sleep -Milliseconds 600
+Start-Process 'http://127.0.0.1:31415'
+
 Write-Host ''
-Write-Host ('DeskPilot successfully installed to: ' + $InstallDir + '\' + $BinaryName) -ForegroundColor Green
-Write-Host 'You can now run deskpilot from PowerShell or launch it from Start Menu!' -ForegroundColor Yellow
+Write-Host '=========================================' -ForegroundColor Cyan
+Write-Host '  DeskPilot Studio is Live & Running!    ' -ForegroundColor Green
+Write-Host '  Web Studio: http://127.0.0.1:31415     ' -ForegroundColor Cyan
+Write-Host '  Ultra-Short Run Command: dp            ' -ForegroundColor Yellow
 Write-Host '=========================================' -ForegroundColor Cyan

@@ -1,48 +1,58 @@
-//! Native Ollama chat client built with eframe.
+//! DeskPilot: Private, ultra-fast, local-first background AI daemon & Web Studio.
 
-mod app;
+mod ipc;
 mod message;
 mod ollama;
 mod single_instance;
 mod storage;
 mod tools;
-mod ipc;
 
 use std::sync::Arc;
 
-use app::AiHelperApp;
-
-fn main() -> eframe::Result<()> {
-    let instance_guard = single_instance::acquire_or_focus();
-    let runtime = Arc::new(
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("failed to create Tokio runtime"),
-    );
-
-    let (ipc_tx, ipc_rx) = tokio::sync::mpsc::unbounded_channel();
-    let r = runtime.clone();
-    let ipc_tx_clone = ipc_tx.clone();
-    r.spawn(async move {
-        ipc::start_server(ipc_tx_clone).await;
-    });
-
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title("DeskPilot")
-            .with_inner_size(app::WINDOW_SIZE)
-            .with_min_inner_size(app::MIN_WINDOW_SIZE)
-            .with_decorations(true)
-            .with_visible(true),
-        ..Default::default()
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let instance_guard = match single_instance::acquire_or_focus() {
+        Some(guard) => guard,
+        None => return Ok(()),
     };
 
-    let result = eframe::run_native(
-        "DeskPilot",
-        options,
-        Box::new(move |cc| Ok(Box::new(AiHelperApp::new(cc, Arc::clone(&runtime), ipc_rx)))),
-    );
+    println!("====================================================");
+    println!("  ThomsonWorks DeskPilot Headless Daemon v0.1.0");
+    println!("  Obsidian Velocity Web Studio & Automation Engine");
+    println!("====================================================");
+
+    let storage = Arc::new(storage::Storage::new());
+    
+    // Start Web Studio / REST API server
+    let server_task = tokio::spawn(async move {
+        ipc::start_server(storage).await;
+    });
+
+    println!("DeskPilot daemon running in background on http://127.0.0.1:31415");
+
+    let args: Vec<String> = std::env::args().collect();
+    let auto_open = !args.iter().any(|a| a == "--headless" || a == "--no-open");
+    if auto_open {
+        tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            #[cfg(windows)]
+            let _ = std::process::Command::new("cmd").args(["/C", "start", "http://127.0.0.1:31415"]).spawn();
+            #[cfg(target_os = "macos")]
+            let _ = std::process::Command::new("open").arg("http://127.0.0.1:31415").spawn();
+            #[cfg(target_os = "linux")]
+            let _ = std::process::Command::new("xdg-open").arg("http://127.0.0.1:31415").spawn();
+        });
+    }
+
+    println!("Press Ctrl+C to terminate.");
+
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {
+            println!("\nShutting down DeskPilot daemon gracefully...");
+        }
+        _ = server_task => {}
+    }
+
     drop(instance_guard);
-    result
+    Ok(())
 }

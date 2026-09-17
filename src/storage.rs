@@ -91,11 +91,31 @@ impl Storage {
              CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL DEFAULT 1, content TEXT NOT NULL, embedding TEXT NOT NULL DEFAULT '[]', confidence REAL NOT NULL DEFAULT 1.0, access_count INTEGER NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL DEFAULT 0);
              CREATE TABLE IF NOT EXISTS scratchpad (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL DEFAULT 1, note TEXT NOT NULL, decay_score REAL NOT NULL DEFAULT 1.0, created_at INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS triggers (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL, trigger_type TEXT NOT NULL, schedule_expr TEXT NOT NULL, action_type TEXT NOT NULL, action_payload TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, last_run INTEGER NOT NULL DEFAULT 0);
+             CREATE TABLE IF NOT EXISTS providers (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, provider_type TEXT NOT NULL, base_url TEXT NOT NULL, api_key TEXT NOT NULL, default_model TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+             CREATE TABLE IF NOT EXISTS gotchas (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL DEFAULT 1, subsystem TEXT NOT NULL, gotcha_text TEXT NOT NULL, invariant_rule TEXT NOT NULL, confidence REAL NOT NULL DEFAULT 1.0, created_at INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL);"
         )?;
         
         let _ = conn.execute("INSERT OR IGNORE INTO projects (id, name) VALUES (1, 'Default Project')", []);
         let _ = conn.execute("INSERT OR IGNORE INTO conversations (id, project_id, title, updated_at) VALUES (1, 1, 'Main Chat', 0)", []);
+
+        let gotcha_count: i64 = conn.query_row("SELECT count(*) FROM gotchas", [], |r| r.get(0)).unwrap_or(0);
+        if gotcha_count == 0 {
+            let now = chrono::Utc::now().timestamp();
+            let _ = conn.execute("INSERT INTO gotchas (project_id, subsystem, gotcha_text, invariant_rule, confidence, created_at) VALUES (1, 'Axum IPC', 'EventSource in Chrome drops silently without keep-alive pings', 'Yield SSE comment ping every 15s in event stream', 0.98, ?1)", [now]);
+            let _ = conn.execute("INSERT INTO gotchas (project_id, subsystem, gotcha_text, invariant_rule, confidence, created_at) VALUES (1, 'Workspace Git', 'Unstaged modifications cause branch swap collision and data loss', 'Ensure clean git checkpoint before running rollback or patch', 0.99, ?1)", [now]);
+            let _ = conn.execute("INSERT INTO gotchas (project_id, subsystem, gotcha_text, invariant_rule, confidence, created_at) VALUES (1, 'SQLite WAL', 'Concurrent write access across async tasks can lock SQLite DB', 'Enable PRAGMA busy_timeout = 5000 and WAL mode', 0.96, ?1)", [now]);
+            let _ = conn.execute("INSERT INTO gotchas (project_id, subsystem, gotcha_text, invariant_rule, confidence, created_at) VALUES (1, 'Context Economy', 'Dumping hundreds of raw compile logs poisons prompt with 12k tokens', 'Extract error root cause only; prune raw stdout', 0.97, ?1)", [now]);
+        }
+
+        let provider_count: i64 = conn.query_row("SELECT count(*) FROM providers", [], |r| r.get(0)).unwrap_or(0);
+        if provider_count == 0 {
+            let _ = conn.execute("INSERT INTO providers (name, provider_type, base_url, api_key, default_model, is_active, created_at) VALUES ('OpenRouter Unified', 'openrouter', 'https://openrouter.ai/api/v1', '', 'anthropic/claude-3.7-sonnet', 1, 0)", []);
+            let _ = conn.execute("INSERT INTO providers (name, provider_type, base_url, api_key, default_model, is_active, created_at) VALUES ('Local Ollama (Offline)', 'ollama', 'http://localhost:11434', '', 'ornith:9b', 0, 0)", []);
+            let _ = conn.execute("INSERT INTO providers (name, provider_type, base_url, api_key, default_model, is_active, created_at) VALUES ('Anthropic Native', 'anthropic', 'https://api.anthropic.com/v1', '', 'claude-3-7-sonnet-20250219', 0, 0)", []);
+            let _ = conn.execute("INSERT INTO providers (name, provider_type, base_url, api_key, default_model, is_active, created_at) VALUES ('DeepSeek Official', 'deepseek', 'https://api.deepseek.com', '', 'deepseek-reasoner', 0, 0)", []);
+            let _ = conn.execute("INSERT INTO providers (name, provider_type, base_url, api_key, default_model, is_active, created_at) VALUES ('OpenAI Native', 'openai', 'https://api.openai.com/v1', '', 'gpt-4o', 0, 0)", []);
+        }
 
         let schema: String = conn.query_row("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages'", [], |row| row.get(0)).unwrap_or_default();
         if schema.contains("position INTEGER PRIMARY KEY") {
@@ -353,6 +373,145 @@ impl Storage {
         )?;
         Ok(())
     }
+
+    pub fn get_providers(&self) -> Result<Vec<ProviderRecord>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT id, name, provider_type, base_url, api_key, default_model, is_active FROM providers ORDER BY is_active DESC, id ASC")?;
+        let items = stmt.query_map([], |row| {
+            Ok(ProviderRecord {
+                id: row.get::<_, i64>(0)? as u64,
+                name: row.get(1)?,
+                provider_type: row.get(2)?,
+                base_url: row.get(3)?,
+                api_key: row.get(4)?,
+                default_model: row.get(5)?,
+                is_active: row.get::<_, i64>(6)? != 0,
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(items)
+    }
+
+    pub fn add_provider(&self, name: &str, provider_type: &str, base_url: &str, api_key: &str, default_model: &str, is_active: bool) -> Result<u64> {
+        let conn = self.connection()?;
+        if is_active {
+            let _ = conn.execute("UPDATE providers SET is_active = 0", []);
+        }
+        conn.execute(
+            "INSERT INTO providers (name, provider_type, base_url, api_key, default_model, is_active, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 0)",
+            params![name, provider_type, base_url, api_key, default_model, if is_active { 1 } else { 0 }],
+        )?;
+        Ok(conn.last_insert_rowid() as u64)
+    }
+
+    pub fn delete_provider(&self, id: u64) -> Result<()> {
+        let conn = self.connection()?;
+        conn.execute("DELETE FROM providers WHERE id = ?1", params![id as i64])?;
+        Ok(())
+    }
+
+    pub fn set_active_provider(&self, id: u64) -> Result<()> {
+        let conn = self.connection()?;
+        conn.execute("UPDATE providers SET is_active = 0", [])?;
+        conn.execute("UPDATE providers SET is_active = 1 WHERE id = ?1", params![id as i64])?;
+        Ok(())
+    }
+
+    pub fn get_gotchas(&self, project_id: u64) -> Result<Vec<GotchaItem>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT id, project_id, subsystem, gotcha_text, invariant_rule, confidence FROM gotchas WHERE project_id = ?1 ORDER BY confidence DESC, id DESC")?;
+        let items = stmt.query_map([project_id as i64], |row| {
+            Ok(GotchaItem {
+                id: row.get::<_, i64>(0)? as u64,
+                project_id: row.get::<_, i64>(1)? as u64,
+                subsystem: row.get(2)?,
+                gotcha_text: row.get(3)?,
+                invariant_rule: row.get(4)?,
+                confidence: row.get(5)?,
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(items)
+    }
+
+    pub fn add_gotcha(&self, project_id: u64, subsystem: &str, gotcha_text: &str, invariant_rule: &str, confidence: f64) -> Result<u64> {
+        let conn = self.connection()?;
+        let now = chrono::Utc::now().timestamp();
+        conn.execute(
+            "INSERT INTO gotchas (project_id, subsystem, gotcha_text, invariant_rule, confidence, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![project_id as i64, subsystem, gotcha_text, invariant_rule, confidence, now],
+        )?;
+        Ok(conn.last_insert_rowid() as u64)
+    }
+
+    pub fn optimise_conversation(&self, project_id: u64, conversation_id: u64) -> Result<usize> {
+        let conn = self.connection()?;
+        let now = chrono::Utc::now().timestamp();
+        
+        let mut stmt = conn.prepare("SELECT content FROM messages WHERE conversation_id = ?1 ORDER BY id DESC LIMIT 10")?;
+        let recent = stmt.query_map([conversation_id as i64], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        
+        let count = recent.len();
+        let note = format!("Conversation optimised at {}: captured {} active dialogue turns into invariants", now, count);
+        let _ = self.append_scratchpad(project_id, &note);
+        
+        let gotchas = self.get_gotchas(project_id).unwrap_or_default();
+        Ok(gotchas.len())
+    }
+
+    pub fn get_conversation_messages(&self, conversation_id: u64) -> Result<Vec<Message>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT conversation_id, role, content, thinking, created_at FROM messages WHERE conversation_id = ?1 ORDER BY position ASC, id ASC")?;
+        let items = stmt.query_map([conversation_id as i64], |row| {
+            let conv_id: u64 = row.get(0)?;
+            let role: String = row.get(1)?;
+            let role = match role.as_str() {
+                "system" => Role::System,
+                "assistant" => Role::Assistant,
+                _ => Role::User,
+            };
+            let mut message = Message::new(conv_id, role, row.get::<_, String>(2)?);
+            message.thinking = row.get(3)?;
+            message.created_at = row.get(4)?;
+            Ok(message)
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(items)
+    }
+
+    pub fn add_message(&self, conversation_id: u64, role: &str, content: &str, thinking: &str) -> Result<()> {
+        let conn = self.connection()?;
+        let now = chrono::Utc::now().timestamp();
+        let max_pos: i64 = conn.query_row(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM messages WHERE conversation_id = ?1",
+            params![conversation_id as i64],
+            |row| row.get(0),
+        ).unwrap_or(0);
+        conn.execute(
+            "INSERT INTO messages(conversation_id, position, role, content, thinking, created_at) VALUES(?1, ?2, ?3, ?4, ?5, ?6)",
+            params![conversation_id as i64, max_pos, role, content, thinking, now],
+        )?;
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GotchaItem {
+    pub id: u64,
+    pub project_id: u64,
+    pub subsystem: String,
+    pub gotcha_text: String,
+    pub invariant_rule: String,
+    pub confidence: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderRecord {
+    pub id: u64,
+    pub name: String,
+    pub provider_type: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub default_model: String,
+    pub is_active: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

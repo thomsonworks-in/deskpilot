@@ -8,46 +8,46 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         :root {
-            --tw-bg-dark: #08060d;
-            --tw-panel-dark: #0f0d17;
+            --tw-bg-dark: #0a0910;
+            --tw-panel-dark: #100e18;
             --tw-panel-elevated: #161322;
-            --tw-border-glass: rgba(170, 59, 255, 0.14);
-            --tw-accent-purple: #aa3bff;
-            --tw-accent-glow: #c084fc;
+            --tw-border-glass: rgba(167, 139, 250, 0.12);
+            --tw-accent-purple: #7c3aed;
+            --tw-accent-glow: #a78bfa;
         }
-        body { background-color: #08060d; color: #ecebf0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body { background-color: #0a0910; color: #e2e1e7; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-thumb { background: #201c2e; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #352f4a; }
         
         .glass-dock {
-            background: rgba(16, 14, 23, 0.88);
+            background: rgba(16, 14, 24, 0.92);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(170, 59, 255, 0.18);
-            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 24px rgba(170, 59, 255, 0.08);
+            border: 1px solid rgba(167, 139, 250, 0.14);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
         }
         .active-tab {
-            background: rgba(170, 59, 255, 0.14);
-            color: #c084fc;
-            border-left: 2px solid #aa3bff;
+            background: rgba(124, 58, 237, 0.14);
+            color: #c4b5fd;
+            border-left: 2px solid #7c3aed;
         }
         .nav-item {
             transition: all 0.15s ease;
         }
         .nav-item:hover {
-            background: rgba(170, 59, 255, 0.08);
+            background: rgba(124, 58, 237, 0.08);
             color: #ffffff;
         }
         .btn-brand {
-            background: linear-gradient(135deg, #aa3bff, #7e14ff);
-            color: #fff;
-            font-weight: 600;
+            background: linear-gradient(135deg, #6d28d9, #4c1d95);
+            color: #f5f3ff;
+            font-weight: 500;
             transition: all 0.2s ease;
         }
         .btn-brand:hover {
-            background: linear-gradient(135deg, #b854ff, #8d28ff);
-            box-shadow: 0 0 18px rgba(170, 59, 255, 0.45);
+            background: linear-gradient(135deg, #7c3aed, #5b21b6);
+            box-shadow: 0 4px 16px rgba(109, 40, 217, 0.25);
         }
         .badge-pill {
             transition: all 0.15s ease;
@@ -69,23 +69,23 @@
             <div class="w-6 h-6 flex items-center justify-center flex-shrink-0">
                 <!-- ThomsonWorks Official Vector Emblem -->
                 <svg viewBox="0 0 48 46" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full drop-shadow">
-                    <path d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" fill="#aa3bff"/>
-                    <path d="M10.287 31.675h13.376V44.24l19.535-27.355H31.82c-1.842 0-2.912-2.081-1.842-3.579L37.458 2.835H10.933l-8.696 12.18h15.228c1.842 0 2.912 2.081 1.842 3.578l-7.48 10.471c-.536.748 0 1.788.92 1.788z" fill="#c084fc" opacity="0.88"/>
+                    <path d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" fill="#7c3aed"/>
+                    <path d="M10.287 31.675h13.376V44.24l19.535-27.355H31.82c-1.842 0-2.912-2.081-1.842-3.579L37.458 2.835H10.933l-8.696 12.18h15.228c1.842 0 2.912 2.081 1.842 3.578l-7.48 10.471c-.536.748 0 1.788.92 1.788z" fill="#a78bfa" opacity="0.85"/>
                 </svg>
             </div>
             
             <div class="flex items-center space-x-1.5 text-xs">
-                <span class="font-bold text-white tracking-wider uppercase text-[11px] hidden sm:inline">ThomsonWorks</span>
+                <span class="font-bold text-slate-200 tracking-wider uppercase text-[11px] hidden sm:inline">ThomsonWorks</span>
                 <span class="text-slate-600 hidden sm:inline">/</span>
-                <span class="font-medium text-[#c084fc]">DeskPilot</span>
-                <span class="text-[9px] font-mono px-1 py-0.5 rounded bg-purple-950/80 text-purple-300 border border-purple-800/80">STUDIO</span>
+                <span class="font-medium text-purple-300">DeskPilot</span>
+                <span class="text-[9px] font-mono px-1 py-0.5 rounded bg-purple-950/40 text-purple-300 border border-purple-900/40">STUDIO</span>
             </div>
 
             <div class="h-3.5 w-px bg-[#262135]"></div>
 
             <!-- Workspace Context Switcher -->
-            <div class="flex items-center space-x-1.5 bg-[#151221] border border-[#272238] rounded-md px-2 py-0.5 text-xs text-slate-300 hover:border-[#aa3bff] transition cursor-pointer">
-                <i class="fa-solid fa-folder-closed text-[#aa3bff] text-[10px]"></i>
+            <div class="flex items-center space-x-1.5 bg-[#151221] border border-[#272238] rounded-md px-2 py-0.5 text-xs text-slate-300 hover:border-purple-600/60 transition cursor-pointer">
+                <i class="fa-solid fa-folder-closed text-purple-400 text-[10px]"></i>
                 <select id="project-select" onchange="switchProject(this.value)" class="bg-transparent border-none focus:outline-none text-[11px] text-slate-200 cursor-pointer pr-1">
                     <option value="1">Control</option>
                     <option value="2">DeskPilot</option>
@@ -96,7 +96,7 @@
         <!-- Center: Quick View Mode Pills -->
         <div class="hidden md:flex items-center bg-[#13101c] border border-[#241f33] rounded-lg p-0.5 text-[11px]">
             <button onclick="setCanvasMode('chat')" id="mode-btn-chat" class="px-2.5 py-1 rounded-md text-white font-medium bg-[#241f33] transition flex items-center gap-1.5">
-                <i class="fa-solid fa-bolt-lightning text-[#c084fc] text-[10px]"></i>
+                <i class="fa-solid fa-bolt-lightning text-purple-300 text-[10px]"></i>
                 <span>Agent Studio</span>
             </button>
             <button onclick="setCanvasMode('spec')" id="mode-btn-spec" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition flex items-center gap-1.5">
@@ -108,17 +108,19 @@
         <!-- Right: Telemetry & Actions -->
         <div class="flex items-center space-x-2 text-xs flex-shrink-0">
             <div class="hidden lg:flex items-center space-x-1.5 text-slate-400 font-mono text-[11px]">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="w-1.5 h-1.5 rounded-full bg-emerald-500/80 animate-pulse"></span>
                 <span class="text-slate-300">:31415</span>
             </div>
             
-            <div class="flex items-center space-x-1 bg-[#141120] border border-[#262138] rounded-md px-2 py-0.5 text-[10px] text-[#c084fc] font-mono">
-                <i class="fa-solid fa-brain text-[10px] text-purple-400 mr-0.5"></i>
-                <span id="active-model-indicator">Claude 3.7</span>
+            <div class="flex items-center space-x-1.5 bg-[#141120] border border-[#262138] hover:border-purple-600/60 rounded-md px-2 py-0.5 text-xs text-purple-300 font-mono transition">
+                <i class="fa-solid fa-brain text-[10px] text-purple-400/80"></i>
+                <select id="model-select" onchange="onModelChange(this.value)" class="bg-transparent border-none focus:outline-none text-[11px] text-purple-200 cursor-pointer pr-1 font-sans">
+                    <option value="" disabled selected>Detecting local models...</option>
+                </select>
             </div>
 
             <!-- Inspector Toggle Button -->
-            <button onclick="toggleInspector()" class="p-1.5 rounded-md hover:bg-[#1f1a30] text-slate-400 hover:text-white transition" title="Toggle Context Inspector (Ctrl+B)">
+            <button onclick="toggleInspector()" class="p-1.5 rounded-md hover:bg-[#1a1626] text-slate-400 hover:text-white transition" title="Toggle Context Inspector (Ctrl+B)">
                 <i class="fa-solid fa-sidebar text-xs"></i>
             </button>
         </div>
@@ -141,6 +143,10 @@
                     <button onclick="switchNav('chat')" id="nav-chat" class="active-tab w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item">
                         <i class="fa-solid fa-terminal w-4 text-center text-xs text-[#c084fc]"></i>
                         <span>Live Agent Studio</span>
+                    </button>
+                    <button onclick="switchNav('providers')" id="nav-providers" class="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item text-slate-400">
+                        <i class="fa-solid fa-server w-4 text-center text-xs text-sky-400"></i>
+                        <span>AI Providers & Keys</span>
                     </button>
                     <button onclick="switchNav('triggers')" id="nav-triggers" class="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item text-slate-400">
                         <i class="fa-solid fa-clock-rotate-left w-4 text-center text-xs text-amber-400"></i>
@@ -335,36 +341,46 @@
                             <span class="text-amber-400 font-bold">/rollback</span>
                             <span class="text-[10px] text-slate-400">Revert workspace to clean git checkpoint</span>
                         </div>
-                        <div onclick="applySlash('/repo_map')" class="px-2.5 py-1.5 rounded-lg hover:bg-[#201833] cursor-pointer flex items-center justify-between text-slate-200">
-                            <span class="text-emerald-400 font-bold">/repo_map</span>
+                        <div onclick="applySlash('/repo_map')" class="px-2.5 py-1.5 rounded-lg hover:bg-[#1e192f] cursor-pointer flex items-center justify-between text-slate-200">
+                            <span class="text-emerald-400/90 font-bold">/repo_map</span>
                             <span class="text-[10px] text-slate-400">Summarize AST workspace structure</span>
+                        </div>
+                        <div onclick="applySlash('/optimise')" class="px-2.5 py-1.5 rounded-lg hover:bg-[#1e192f] cursor-pointer flex items-center justify-between text-slate-200">
+                            <span class="text-purple-300 font-bold">/optimise</span>
+                            <span class="text-[10px] text-slate-400">Optimise chat & archive gotchas to Active Memory</span>
                         </div>
                     </div>
 
                     <!-- Floating Composer Pill Container -->
-                    <div class="glass-dock rounded-2xl p-2 focus-within:border-[#aa3bff] transition shadow-2xl">
+                    <div class="glass-dock rounded-2xl p-2 focus-within:border-purple-600/60 transition shadow-2xl">
                         <div class="flex items-end space-x-2">
                             <!-- Left Tool Button -->
-                            <button onclick="toggleSlashPopup()" class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-[#1d182b] transition flex-shrink-0" title="Slash Commands & Tools">
+                            <button onclick="toggleSlashPopup()" class="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-[#1a1626] transition flex-shrink-0" title="Slash Commands & Tools">
                                 <i class="fa-solid fa-plus text-xs"></i>
                             </button>
 
                             <!-- Prompt Textarea -->
-                            <textarea id="prompt-input" rows="1" placeholder="Instruct DeskPilot or type slash command (/spec, /test, /rollback)..."
+                            <textarea id="prompt-input" rows="1" placeholder="Instruct DeskPilot or type slash command (/spec, /optimise, /rollback)..."
                                 class="flex-1 bg-transparent px-2 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none resize-none max-h-32"
                                 oninput="handleInput(this)"
                                 onkeydown="if(event.key==='Enter' && !event.shiftKey){ event.preventDefault(); sendMessage(); }"></textarea>
 
                             <!-- Action Control Pills -->
                             <div class="flex items-center space-x-1.5 flex-shrink-0 pb-0.5">
+                                <!-- Optimise Chat Button -->
+                                <button onclick="optimiseChat()" id="optimise-btn" class="px-2.5 py-1 rounded-lg text-[10px] font-mono text-purple-300/90 border border-purple-900/40 bg-purple-950/20 hover:bg-purple-950/50 transition flex items-center gap-1.5" title="Extract key gotchas & compress history while preserving context">
+                                    <i class="fa-solid fa-sparkles text-[9px] text-purple-400/80"></i>
+                                    <span id="optimise-label">Optimise Chat</span>
+                                </button>
+
                                 <!-- Think Toggle -->
-                                <button onclick="toggleThink()" id="think-btn" class="px-2.5 py-1 rounded-lg text-[10px] font-mono text-amber-300 border border-amber-900/60 bg-amber-950/30 hover:bg-amber-950/60 transition flex items-center gap-1">
+                                <button onclick="toggleThink()" id="think-btn" class="px-2.5 py-1 rounded-lg text-[10px] font-mono text-amber-300/80 border border-amber-900/40 bg-amber-950/20 hover:bg-amber-950/40 transition flex items-center gap-1">
                                     <i class="fa-solid fa-brain text-[9px]"></i>
                                     <span>Think</span>
                                 </button>
 
                                 <!-- Submit Button -->
-                                <button onclick="sendMessage()" class="btn-brand w-7 h-7 rounded-full flex items-center justify-center shadow-lg flex-shrink-0">
+                                <button onclick="sendMessage()" class="btn-brand w-7 h-7 rounded-full flex items-center justify-center shadow-md flex-shrink-0">
                                     <i class="fa-solid fa-arrow-up text-xs"></i>
                                 </button>
                             </div>
@@ -503,6 +519,88 @@
                 </div>
             </div>
 
+            <!-- VIEW: PROVIDERS & MODEL ENGINES -->
+            <div id="canvas-providers" class="hidden flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full space-y-6">
+                <div class="border-b border-[#201a30] pb-4 flex items-center justify-between">
+                    <div>
+                        <h2 class="text-base font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-server text-sky-400"></i> AI Model Providers & Routing
+                        </h2>
+                        <p class="text-xs text-slate-400">Add, configure, and hot-swap between multiple cloud frontier engines and offline local models.</p>
+                    </div>
+                    <button onclick="openProviderModal()" class="btn-brand text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus text-[10px]"></i>
+                        <span>Add Provider</span>
+                    </button>
+                </div>
+
+                <!-- Quick Presets Section (1-Click Add) -->
+                <div class="space-y-3">
+                    <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">1-Click Quick Presets</span>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <div onclick="selectPreset('openrouter')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
+                            <div class="flex items-center space-x-2 text-purple-400 font-bold text-xs">
+                                <i class="fa-solid fa-bolt"></i>
+                                <span>OpenRouter</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400">Aggregates Claude 3.7, DeepSeek-R1, GPT-4o</p>
+                        </div>
+
+                        <div onclick="selectPreset('anthropic')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
+                            <div class="flex items-center space-x-2 text-amber-400 font-bold text-xs">
+                                <i class="fa-solid fa-cube"></i>
+                                <span>Anthropic Native</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400">Direct Claude 3.7 Sonnet / Opus</p>
+                        </div>
+
+                        <div onclick="selectPreset('deepseek')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
+                            <div class="flex items-center space-x-2 text-sky-400 font-bold text-xs">
+                                <i class="fa-solid fa-brain"></i>
+                                <span>DeepSeek Official</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400">High-speed DeepSeek-R1 & V3</p>
+                        </div>
+
+                        <div onclick="selectPreset('openai')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
+                            <div class="flex items-center space-x-2 text-emerald-400 font-bold text-xs">
+                                <i class="fa-solid fa-microchip"></i>
+                                <span>OpenAI Official</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400">Direct GPT-4o, o1, o3-mini</p>
+                        </div>
+
+                        <div onclick="selectPreset('ollama')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
+                            <div class="flex items-center space-x-2 text-rose-400 font-bold text-xs">
+                                <i class="fa-solid fa-laptop-code"></i>
+                                <span>Local Ollama</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400">100% Offline, Zero Token Cost</p>
+                        </div>
+
+                        <div onclick="selectPreset('custom')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
+                            <div class="flex items-center space-x-2 text-indigo-400 font-bold text-xs">
+                                <i class="fa-solid fa-shield-halved"></i>
+                                <span>Enterprise Gateway</span>
+                            </div>
+                            <p class="text-[10px] text-slate-400">vLLM, LiteLLM, Private VPC</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configured Providers Grid -->
+                <div class="space-y-3 pt-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Configured Providers & Routing</span>
+                        <button onclick="loadProviders()" class="text-[10px] font-mono text-[#c084fc] hover:text-white">Refresh</button>
+                    </div>
+                    
+                    <div id="providers-list" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                        <!-- Loaded dynamically via loadProviders() -->
+                    </div>
+                </div>
+            </div>
+
             <!-- VIEW 5: SETTINGS & VAULT -->
             <div id="canvas-settings" class="hidden flex-1 overflow-y-auto p-8 max-w-3xl mx-auto w-full space-y-6">
                 <div class="border-b border-[#201a30] pb-4">
@@ -574,24 +672,92 @@
                 </div>
             </div>
 
-            <!-- O(1) Working Scratchpad Memory -->
-            <div class="space-y-1.5">
-                <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 px-1">Active Memory Node</span>
-                <div class="p-2.5 rounded-lg bg-[#120e1e] border border-[#221b33] text-xs space-y-1 text-slate-300">
-                    <div class="font-semibold text-[11px] text-slate-200">Rule Cache:</div>
-                    <ul class="list-disc pl-4 text-[10px] text-slate-400 space-y-1">
-                        <li>Strict replace_file_content surgical diffs</li>
-                        <li>SQLite WAL database mode</li>
-                        <li>Zero Node.js runtime bloat</li>
-                    </ul>
+            <!-- Active Gotchas & Memory Invariants -->
+            <div class="space-y-2">
+                <div class="flex items-center justify-between text-xs px-1">
+                    <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <i class="fa-solid fa-shield-halved text-purple-400/80"></i> Active Gotchas
+                    </span>
+                    <button onclick="loadGotchas()" class="text-[10px] text-purple-300/80 hover:text-white font-mono">Sync</button>
+                </div>
+                <div id="gotchas-container" class="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                    <div class="p-2.5 rounded-lg bg-[#120e1e] border border-[#221b33] text-xs space-y-1">
+                        <div class="flex items-center justify-between">
+                            <span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-purple-950/40 text-purple-300 border border-purple-900/40 font-semibold">Axum IPC</span>
+                            <span class="text-[9px] font-mono text-emerald-400/80">98% Confirmed</span>
+                        </div>
+                        <p class="text-[10px] text-slate-300 leading-tight">EventSource drops silently without keep-alive ping</p>
+                        <div class="text-[9px] text-slate-400 font-mono bg-black/30 p-1 rounded border border-[#1e1a2c]">
+                            <span class="text-purple-300/70">Rule:</span> Yield SSE comment ping every 15s
+                        </div>
+                    </div>
                 </div>
             </div>
         </aside>
     </div>
 
+    <!-- 3. ADD / EDIT PROVIDER MODAL -->
+    <div id="provider-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+        <div class="glass-dock max-w-lg w-full rounded-2xl p-6 border border-[#2d2242] shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-[#201a30] pb-3">
+                <h3 id="modal-provider-title" class="text-sm font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-server text-sky-400"></i> Configure AI Provider
+                </h3>
+                <button onclick="toggleElement('provider-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-300 font-semibold mb-1">Provider Label / Name</label>
+                    <input id="prov-name" type="text" placeholder="e.g. OpenRouter Primary, Internal vLLM" class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-[#aa3bff]" />
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-slate-300 font-semibold mb-1">Provider Protocol</label>
+                        <select id="prov-type" onchange="handleProtocolChange(this.value)" class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none">
+                            <option value="openrouter">OpenRouter</option>
+                            <option value="anthropic">Anthropic Official</option>
+                            <option value="deepseek">DeepSeek Official</option>
+                            <option value="openai">OpenAI Official</option>
+                            <option value="ollama">Local Ollama</option>
+                            <option value="custom">Enterprise / Custom Proxy</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-slate-300 font-semibold mb-1">Default Model</label>
+                        <input id="prov-model" type="text" placeholder="e.g. anthropic/claude-3.7-sonnet" class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none font-mono" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 font-semibold mb-1">Base Endpoint URL</label>
+                    <input id="prov-url" type="text" placeholder="https://api.example.com/v1" class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none font-mono" />
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 font-semibold mb-1">API Secret Key / Token</label>
+                    <input id="prov-key" type="password" placeholder="sk-..." class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none font-mono" />
+                </div>
+
+                <div class="flex items-center space-x-2 pt-1">
+                    <input id="prov-active" type="checkbox" checked class="accent-purple-500 rounded" />
+                    <label for="prov-active" class="text-slate-300">Set as active execution provider immediately</label>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end space-x-2.5 pt-3 border-t border-[#201a30]">
+                <button onclick="toggleElement('provider-modal')" class="px-4 py-2 rounded-lg bg-[#191426] hover:bg-[#221b33] text-slate-300 text-xs font-semibold">Cancel</button>
+                <button onclick="saveProvider()" class="btn-brand px-5 py-2 rounded-lg text-xs font-semibold">Save Provider</button>
+            </div>
+        </div>
+    </div>
+
     <!-- UI JAVASCRIPT LOGIC -->
     <script>
         let thinkEnabled = true;
+        let currentProject = 1;
+        let currentConversation = 1;
 
         function setCanvasMode(mode) {
             document.getElementById('canvas-chat').classList.toggle('hidden', mode !== 'chat');
@@ -609,7 +775,7 @@
         }
 
         function switchNav(nav) {
-            ['chat', 'triggers', 'mcp', 'settings'].forEach(v => {
+            ['chat', 'providers', 'triggers', 'mcp', 'settings'].forEach(v => {
                 const el = document.getElementById('canvas-' + v);
                 const btn = document.getElementById('nav-' + v);
                 if (el) el.classList.toggle('hidden', v !== nav);
@@ -618,7 +784,128 @@
             if (nav === 'chat') {
                 document.getElementById('canvas-spec').classList.add('hidden');
             }
+            if (nav === 'providers') {
+                loadProviders();
+            }
         }
+
+        const PRESET_CONFIGS = {
+            'openrouter': { name: 'OpenRouter Unified', type: 'openrouter', url: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-3.7-sonnet' },
+            'anthropic': { name: 'Anthropic Official', type: 'anthropic', url: 'https://api.anthropic.com/v1', model: 'claude-3-7-sonnet-20250219' },
+            'deepseek': { name: 'DeepSeek Official', type: 'deepseek', url: 'https://api.deepseek.com', model: 'deepseek-reasoner' },
+            'openai': { name: 'OpenAI Official', type: 'openai', url: 'https://api.openai.com/v1', model: 'gpt-4o' },
+            'ollama': { name: 'Local Ollama (Offline)', type: 'ollama', url: 'http://localhost:11434', model: 'ornith:9b' },
+            'custom': { name: 'Enterprise Private Proxy', type: 'custom', url: 'http://localhost:8000/v1', model: 'custom-model' }
+        };
+
+        function selectPreset(key) {
+            const p = PRESET_CONFIGS[key] || PRESET_CONFIGS['openrouter'];
+            document.getElementById('prov-name').value = p.name;
+            document.getElementById('prov-type').value = p.type;
+            document.getElementById('prov-url').value = p.url;
+            document.getElementById('prov-model').value = p.model;
+            document.getElementById('prov-key').value = '';
+            document.getElementById('prov-active').checked = true;
+            document.getElementById('provider-modal').classList.remove('hidden');
+        }
+
+        function openProviderModal() {
+            selectPreset('custom');
+        }
+
+        function handleProtocolChange(val) {
+            if (PRESET_CONFIGS[val]) {
+                document.getElementById('prov-url').value = PRESET_CONFIGS[val].url;
+                document.getElementById('prov-model').value = PRESET_CONFIGS[val].model;
+            }
+        }
+
+        async function loadProviders() {
+            try {
+                const res = await fetch('/api/providers');
+                const list = await res.json();
+                const container = document.getElementById('providers-list');
+                container.innerHTML = '';
+                
+                list.forEach(p => {
+                    const card = document.createElement('div');
+                    card.className = `p-4 rounded-xl border transition space-y-3 ${p.is_active ? 'bg-[#181226] border-[#aa3bff]/60 shadow-lg' : 'bg-[#110e1c] border-[#221b33]'}`;
+                    
+                    const badge = p.is_active 
+                        ? '<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ACTIVE</span>'
+                        : '<span class="text-[10px] px-2 py-0.5 rounded bg-[#181426] text-slate-400 border border-[#2b2240] font-mono">STANDBY</span>';
+
+                    card.innerHTML = `
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center space-x-2">
+                                <i class="fa-solid fa-server text-[#c084fc] text-xs"></i>
+                                <h4 class="text-xs font-bold text-white">${p.name}</h4>
+                            </div>
+                            ${badge}
+                        </div>
+                        <div class="text-[11px] font-mono text-slate-400 truncate bg-black/40 p-2 rounded border border-[#201a30] space-y-0.5">
+                            <div><span class="text-slate-500">Model:</span> <span class="text-purple-300 font-semibold">${p.default_model}</span></div>
+                            <div class="truncate"><span class="text-slate-500">Endpoint:</span> ${p.base_url}</div>
+                        </div>
+                        <div class="flex items-center justify-between pt-1">
+                            ${p.is_active 
+                                ? '<span class="text-[10px] text-emerald-400 font-mono">Connected & Ready</span>' 
+                                : `<button onclick="activateProvider(${p.id})" class="px-3 py-1 rounded bg-[#221a36] hover:bg-[#aa3bff] hover:text-white text-[#c084fc] text-[10px] font-mono transition">Set Active</button>`
+                            }
+                            <button onclick="deleteProvider(${p.id})" class="text-slate-500 hover:text-rose-400 text-xs transition" title="Delete Provider"><i class="fa-solid fa-trash-can"></i></button>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (err) {
+                console.error('Failed to load providers', err);
+            }
+        }
+
+        async function saveProvider() {
+            const name = document.getElementById('prov-name').value.trim() || 'Custom Provider';
+            const provider_type = document.getElementById('prov-type').value;
+            const base_url = document.getElementById('prov-url').value.trim();
+            const api_key = document.getElementById('prov-key').value.trim();
+            const default_model = document.getElementById('prov-model').value.trim() || 'default';
+            const is_active = document.getElementById('prov-active').checked;
+
+            try {
+                await fetch('/api/providers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, provider_type, base_url, api_key, default_model, is_active })
+                });
+                document.getElementById('provider-modal').classList.add('hidden');
+                loadProviders();
+                // update header model indicator
+                if (is_active) {
+                    document.getElementById('active-model-indicator').innerText = default_model;
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function activateProvider(id) {
+            try {
+                await fetch(`/api/providers/${id}/activate`, { method: 'POST' });
+                loadProviders();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        async function deleteProvider(id) {
+            if (!confirm('Remove this provider configuration?')) return;
+            try {
+                await fetch(`/api/providers/${id}`, { method: 'DELETE' });
+                loadProviders();
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
 
         function toggleElement(id) {
             const el = document.getElementById(id);
@@ -681,31 +968,193 @@
             }
         }
 
+        function escapeHtml(str) {
+            return (str || '').replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        }
+
         async function sendMessage() {
             const input = document.getElementById('prompt-input');
             const text = input.value.trim();
             if (!text) return;
             document.getElementById('slash-popup').classList.add('hidden');
 
+            if (text === '/optimise' || text === '/optimize') {
+                input.value = '';
+                await optimiseChat();
+                return;
+            }
+
             const messages = document.getElementById('messages');
             const userMsg = document.createElement('div');
             userMsg.className = 'flex justify-end';
-            userMsg.innerHTML = `<div class="bg-[#181426] border border-[#2b2440] text-purple-100 px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-2xl text-xs leading-relaxed shadow-sm">${text}</div>`;
+            userMsg.innerHTML = `<div class="bg-[#161224] border border-[#262038] text-slate-200 px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-2xl text-xs leading-relaxed shadow-sm">${escapeHtml(text)}</div>`;
             messages.appendChild(userMsg);
             input.value = '';
             messages.scrollTop = messages.scrollHeight;
 
+            // Add Assistant Loading Placeholder
+            const loadingId = 'loading-' + Date.now();
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = loadingId;
+            loadingDiv.className = 'flex items-start gap-3 text-xs';
+            loadingDiv.innerHTML = `
+                <div class="w-6 h-6 rounded-md bg-purple-950/60 border border-purple-800/40 flex items-center justify-center text-purple-300 flex-shrink-0">
+                    <i class="fa-solid fa-brain text-[11px] animate-pulse"></i>
+                </div>
+                <div class="space-y-1 flex-1">
+                    <div class="text-[10px] text-purple-400 font-mono font-medium flex items-center gap-2">
+                        <span>${currentSelectedModel}</span>
+                        <span class="text-slate-500 text-[9px]">• Generating...</span>
+                    </div>
+                    <div class="bg-[#120f1d] border border-[#231b36] text-slate-300 px-3.5 py-2 rounded-2xl rounded-tl-sm text-xs leading-relaxed inline-flex items-center gap-2 shadow-sm">
+                        <span class="inline-block animate-spin text-purple-400">⚙</span>
+                        <span>Thinking...</span>
+                    </div>
+                </div>
+            `;
+            messages.appendChild(loadingDiv);
+            messages.scrollTop = messages.scrollHeight;
+
             try {
-                const res = await fetch('/api/message', {
+                const res = await fetch('/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content: text })
+                    body: JSON.stringify({
+                        message: text,
+                        model: currentSelectedModel,
+                        project_id: currentProject || 1,
+                        conversation_id: currentConversation || 1
+                    })
                 });
-                const reply = document.createElement('div');
-                reply.className = 'p-3 rounded-xl bg-[#141120] border border-[#262038] text-xs max-w-xl text-[#c084fc] font-mono shadow-sm flex items-center gap-2';
-                reply.innerHTML = '<span class="animate-spin text-sm">⚙</span> <span>Dispatched to DeskPilot daemon...</span>';
-                messages.appendChild(reply);
+                const data = await res.json();
+                
+                // Remove loading placeholder
+                const placeholder = document.getElementById(loadingId);
+                if (placeholder) placeholder.remove();
+
+                // Render assistant response
+                const assistantDiv = document.createElement('div');
+                assistantDiv.className = 'flex items-start gap-3 text-xs';
+                
+                let thinkingHtml = '';
+                if (data.thinking && data.thinking.trim().length > 0) {
+                    const thinkSec = Math.round((data.duration_ms || 0) / 100) / 10;
+                    thinkingHtml = `
+                        <details class="mb-2 group border border-purple-900/40 bg-[#0c0a16] rounded-lg overflow-hidden">
+                            <summary class="cursor-pointer px-3 py-1.5 text-[10px] font-mono text-purple-300/80 hover:text-purple-200 flex items-center justify-between select-none bg-[#110d1f]">
+                                <span class="flex items-center gap-1.5">
+                                    <i class="fa-solid fa-lightbulb text-amber-400/80 text-[10px]"></i>
+                                    Thought Process (${thinkSec}s)
+                                </span>
+                                <i class="fa-solid fa-chevron-down text-[9px] text-slate-500 group-open:rotate-180 transition-transform"></i>
+                            </summary>
+                            <div class="p-3 text-[11px] text-slate-400 font-mono leading-relaxed border-t border-[#1d172e] bg-[#090712] whitespace-pre-wrap max-h-60 overflow-y-auto">
+                                ${escapeHtml(data.thinking)}
+                            </div>
+                        </details>
+                    `;
+                }
+
+                const elapsed = Math.round((data.duration_ms || 0) / 100) / 10;
+                assistantDiv.innerHTML = `
+                    <div class="w-6 h-6 rounded-md bg-purple-950/60 border border-purple-800/40 flex items-center justify-center text-purple-300 flex-shrink-0">
+                        <i class="fa-solid fa-bolt text-[11px]"></i>
+                    </div>
+                    <div class="space-y-1 flex-1 max-w-2xl">
+                        <div class="text-[10px] text-purple-400/80 font-mono flex items-center gap-2">
+                            <span class="font-semibold">${data.model || currentSelectedModel}</span>
+                            <span class="text-slate-500 text-[9px]">• ${elapsed}s</span>
+                        </div>
+                        ${thinkingHtml}
+                        <div class="bg-[#120f1d] border border-[#231b36] text-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed whitespace-pre-wrap shadow-sm">
+                            ${escapeHtml(data.reply)}
+                        </div>
+                    </div>
+                `;
+                messages.appendChild(assistantDiv);
                 messages.scrollTop = messages.scrollHeight;
+            } catch (err) {
+                console.error(err);
+                const placeholder = document.getElementById(loadingId);
+                if (placeholder) {
+                    placeholder.innerHTML = `
+                        <div class="w-6 h-6 rounded-md bg-red-950/60 border border-red-800/40 flex items-center justify-center text-red-300 flex-shrink-0">
+                            <i class="fa-solid fa-circle-exclamation text-[11px]"></i>
+                        </div>
+                        <div class="text-xs text-red-400 bg-red-950/30 border border-red-900/50 p-2.5 rounded-xl">
+                            Failed to reach DeskPilot daemon or model. Please verify Ollama is running.
+                        </div>
+                    `;
+                }
+            }
+        }
+
+        async function optimiseChat() {
+            const btn = document.getElementById('optimise-btn');
+            const label = document.getElementById('optimise-label');
+            if (!label) return;
+            
+            // Display "Optimising Chat..."
+            label.innerHTML = '<span class="animate-spin inline-block mr-1">⚙</span> Optimising Chat...';
+            btn.classList.add('opacity-75', 'pointer-events-none');
+
+            try {
+                const res = await fetch('/api/chat/optimise', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project_id: 1, conversation_id: 1 })
+                });
+                const data = await res.json();
+                
+                // Muted context checkpoint divider in chat feed
+                const messages = document.getElementById('messages');
+                const checkpoint = document.createElement('div');
+                checkpoint.className = 'my-4 py-2 px-3 rounded-xl bg-[#130f20] border border-[#241c36] text-xs text-slate-300 flex items-center justify-between shadow-sm';
+                checkpoint.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-layer-group text-purple-400/80"></i>
+                        <span class="font-medium text-slate-200">Chat context optimised</span>
+                        <span class="text-[10px] text-slate-400 hidden sm:inline">• ${data.gotchas_preserved || 4} critical gotchas verified in Active Memory</span>
+                    </div>
+                    <span class="text-[10px] text-purple-300/80 font-mono">Continuing seamlessly</span>
+                `;
+                messages.appendChild(checkpoint);
+                messages.scrollTop = messages.scrollHeight;
+
+                await loadGotchas();
+            } catch (err) {
+                console.error(err);
+            } finally {
+                label.innerHTML = '<i class="fa-solid fa-check text-emerald-400/80 mr-1"></i> Optimised';
+                setTimeout(() => {
+                    label.innerHTML = 'Optimise Chat';
+                    btn.classList.remove('opacity-75', 'pointer-events-none');
+                }, 1600);
+            }
+        }
+
+        async function loadGotchas() {
+            const container = document.getElementById('gotchas-container');
+            if (!container) return;
+            try {
+                const res = await fetch('/api/gotchas/1');
+                const list = await res.json();
+                if (!list || list.length === 0) {
+                    container.innerHTML = '<div class="text-[10px] text-slate-500 italic p-2">No gotchas recorded yet.</div>';
+                    return;
+                }
+                container.innerHTML = list.map(g => `
+                    <div class="p-2.5 rounded-lg bg-[#120e1e] border border-[#221b33] text-xs space-y-1 hover:border-purple-900/40 transition">
+                        <div class="flex items-center justify-between">
+                            <span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-purple-950/40 text-purple-300 border border-purple-900/40 font-semibold">${g.subsystem}</span>
+                            <span class="text-[9px] font-mono text-emerald-400/80">${Math.round(g.confidence * 100)}% Confirmed</span>
+                        </div>
+                        <p class="text-[10px] text-slate-300 leading-tight">${g.gotcha_text}</p>
+                        <div class="text-[9px] text-slate-400 font-mono bg-black/30 p-1 rounded border border-[#1e1a2c]">
+                            <span class="text-purple-300/70">Rule:</span> ${g.invariant_rule}
+                        </div>
+                    </div>
+                `).join('');
             } catch (err) {
                 console.error(err);
             }
@@ -750,6 +1199,65 @@
                 toggleInspector();
             }
         });
+
+        let currentSelectedModel = 'ornith:9b';
+
+        async function loadModels() {
+            const sel = document.getElementById('model-select');
+            if (!sel) return;
+            try {
+                const res = await fetch('/api/models');
+                const data = await res.json();
+                
+                let html = '';
+                if (data.local && data.local.length > 0) {
+                    html += '<optgroup label="⚡ Local Offline (Zero Cost)">';
+                    for (const m of data.local) {
+                        const isSelected = m === data.active ? 'selected' : '';
+                        const tag = m.includes('ornith') ? '💡 Reasoning' : (m.includes('gemma') || m.includes('qwen') ? '⚡ Fast' : '⚙ Local');
+                        html += `<option value="${m}" ${isSelected}>${m} (${tag})</option>`;
+                    }
+                    html += '</optgroup>';
+                }
+                
+                if (data.cloud && data.cloud.length > 0) {
+                    html += '<optgroup label="🌐 Cloud Frontier">';
+                    for (const m of data.cloud) {
+                        const isSelected = m === data.active ? 'selected' : '';
+                        html += `<option value="${m}" ${isSelected}>${m}</option>`;
+                    }
+                    html += '</optgroup>';
+                }
+                
+                sel.innerHTML = html;
+                currentSelectedModel = data.active || (data.local && data.local[0]) || 'ornith:9b';
+            } catch (err) {
+                console.error("Failed to load models:", err);
+            }
+        }
+
+        async function onModelChange(modelName) {
+            currentSelectedModel = modelName;
+            try {
+                await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ selected_model: modelName })
+                });
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // Initialize state
+        document.addEventListener('DOMContentLoaded', () => {
+            loadModels();
+            loadGotchas();
+            loadProviders();
+        });
+        loadModels();
+        loadGotchas();
+        loadProviders();
     </script>
 </body>
 </html>

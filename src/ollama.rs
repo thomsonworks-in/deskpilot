@@ -63,6 +63,7 @@ impl OllamaClient {
     pub fn new(base_url: &str) -> Self {
         let http = Client::builder()
             .connect_timeout(Duration::from_secs(10))
+            .no_proxy()
             .build()
             .expect("failed to build HTTP client");
         Self {
