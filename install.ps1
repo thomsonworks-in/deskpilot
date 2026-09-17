@@ -29,7 +29,7 @@ try {
     $Tag = $Release.tag_name
     Write-Host ('Latest Release: ' + $Tag) -ForegroundColor Green
 } catch {
-    $Tag = 'v0.1.0'
+    $Tag = 'v0.1.3'
 }
 
 $ZipName = 'deskpilot-' + $Target + '.zip'
