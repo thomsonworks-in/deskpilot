@@ -50,13 +50,13 @@ try {
     $Downloaded = $true
 } catch {
     Write-Host "GitHub release asset download failed. Checking for local binary..." -ForegroundColor Yellow
-    $LocalExe = Join-Path $PSScriptRoot 'target\debug\deskpilot.exe'
+    $LocalExe = if ($PSScriptRoot) { Join-Path $PSScriptRoot 'target\debug\deskpilot.exe' } else { '.\target\debug\deskpilot.exe' }
     if (Test-Path $LocalExe) {
         Copy-Item -Path $LocalExe -Destination (Join-Path $InstallDir $BinaryName) -Force
         $Downloaded = $true
         Write-Host "Installed local DeskPilot binary." -ForegroundColor Green
     } else {
-        throw "Could not download or locate deskpilot binary: $_"
+        throw "Could not download deskpilot release asset ($ZipName): $($_.Exception.Message)"
     }
 }
 

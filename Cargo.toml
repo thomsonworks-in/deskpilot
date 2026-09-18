@@ -20,8 +20,6 @@ chrono = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 single-instance = "0.3"
 tray-icon = "0.19"
-axum = "0.7"
-tokio-stream = "0.1"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
