@@ -5,6 +5,7 @@ mod message;
 mod single_instance;
 mod storage;
 pub mod tools;
+pub mod mcp;
 
 
 use std::sync::Arc;

@@ -63,6 +63,10 @@ pub struct ProjectPermissions {
     pub web_search: bool,
     #[serde(default = "default_true")]
     pub git_ops: bool,
+    #[serde(default = "default_true")]
+    pub mcp_tools: bool,
+    #[serde(default = "default_true")]
+    pub subagents: bool,
 }
 
 fn default_true() -> bool {
@@ -78,6 +82,8 @@ impl ProjectPermissions {
                 terminal_exec: false,
                 web_search: true,
                 git_ops: false,
+                mcp_tools: false,
+                subagents: true,
             },
             "readwrite" => Self {
                 read_files: true,
@@ -85,6 +91,8 @@ impl ProjectPermissions {
                 terminal_exec: false,
                 web_search: true,
                 git_ops: false,
+                mcp_tools: true,
+                subagents: true,
             },
             "full" => Self {
                 read_files: true,
@@ -92,6 +100,8 @@ impl ProjectPermissions {
                 terminal_exec: true,
                 web_search: true,
                 git_ops: true,
+                mcp_tools: true,
+                subagents: true,
             },
             _ => Self {
                 read_files: true,
@@ -99,6 +109,8 @@ impl ProjectPermissions {
                 terminal_exec: false,
                 web_search: true,
                 git_ops: false,
+                mcp_tools: true,
+                subagents: true,
             },
         }
     }
@@ -691,6 +703,13 @@ impl Storage {
         let now = chrono::Utc::now().timestamp();
         conn.execute("INSERT INTO conversations (project_id, title, updated_at) VALUES (?1, ?2, ?3)", params![project_id as i64, title, now])?;
         Ok(conn.last_insert_rowid() as u64)
+    }
+
+    pub fn delete_conversation(&self, id: u64) -> Result<()> {
+        let conn = self.connection()?;
+        conn.execute("DELETE FROM messages WHERE conversation_id = ?1", params![id as i64])?;
+        conn.execute("DELETE FROM conversations WHERE id = ?1", params![id as i64])?;
+        Ok(())
     }
 
     pub fn get_tasks(&self, project_id: u64) -> Result<Vec<TaskItem>> {

@@ -1,6 +1,8 @@
 use axum::{
-    extract::{Path, State},
-    response::Html,
+    extract::{Path, Request, State},
+    http::{HeaderMap, StatusCode},
+    middleware::{self, Next},
+    response::{Html, Response},
     routing::{get, post},
     Json, Router,
 };
@@ -11,6 +13,7 @@ use std::sync::Arc;
 use std::path::PathBuf;
 use crate::storage::Storage;
 use crate::tools;
+use crate::mcp::McpManager;
 
 
 
@@ -182,12 +185,16 @@ pub struct StoredMessageResp {
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Arc<Storage>,
+    pub mcp: Arc<McpManager>,
 }
 
 const WEB_UI_HTML: &str = include_str!("web_ui.html");
 
 pub async fn start_server(storage: Arc<Storage>) {
-    let state = AppState { storage };
+    let state = AppState {
+        storage,
+        mcp: Arc::new(McpManager::new()),
+    };
 
     let app = Router::new()
         .route("/", get(|| async { Html(WEB_UI_HTML) }))
@@ -200,6 +207,8 @@ pub async fn start_server(storage: Arc<Storage>) {
         .route("/api/projects/:id/trust", post(update_project_trust))
         .route("/api/dialog/pick-folder", post(pick_folder_dialog))
         .route("/api/projects/:id/conversations", get(get_conversations).post(create_conversation))
+        .route("/api/conversations/:id", axum::routing::delete(delete_conversation))
+        .route("/api/projects/:id/files", get(get_project_files))
 
         .route("/api/projects/:id/tasks", get(get_tasks).post(create_task))
         .route("/api/tasks/:id/toggle", post(toggle_task))
@@ -212,6 +221,7 @@ pub async fn start_server(storage: Arc<Storage>) {
         .route("/api/providers/:id/activate", post(activate_provider))
         .route("/api/settings", get(get_settings).post(save_settings))
         .route("/api/credits", get(get_credits))
+        .layer(middleware::from_fn(security_headers_and_origin_guard))
         .with_state(state);
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 31415));
@@ -221,6 +231,38 @@ pub async fn start_server(storage: Arc<Storage>) {
     } else {
         eprintln!("Failed to bind server to {}", addr);
     }
+}
+
+/// Security middleware enforcing local origin containment and secure headers
+async fn security_headers_and_origin_guard(
+    headers: HeaderMap,
+    req: Request,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    // 1. Origin verification for browser requests: reject cross-origin requests from external web pages
+    if let Some(origin) = headers.get("origin").and_then(|v| v.to_str().ok()) {
+        let is_allowed = origin.starts_with("http://127.0.0.1:31415")
+            || origin.starts_with("http://localhost:31415")
+            || origin.starts_with("https://127.0.0.1:31415")
+            || origin.starts_with("https://localhost:31415")
+            || origin == "null"; // local file / electron / desktop webview
+
+        if !is_allowed {
+            eprintln!("[Security] Blocked unauthorized cross-origin request from origin: {}", origin);
+            return Err(StatusCode::FORBIDDEN);
+        }
+    }
+
+    // 2. Process inner request
+    let mut response = next.run(req).await;
+
+    // 3. Attach security headers (Clickjacking & MIME sniffing protection)
+    let resp_headers = response.headers_mut();
+    resp_headers.insert("X-Frame-Options", "DENY".parse().unwrap());
+    resp_headers.insert("X-Content-Type-Options", "nosniff".parse().unwrap());
+    resp_headers.insert("Referrer-Policy", "strict-origin-when-cross-origin".parse().unwrap());
+
+    Ok(response)
 }
 
 async fn handle_message(
@@ -516,9 +558,62 @@ async fn handle_chat(
         )
     };
 
+    // 5. Discover MCP Tools
+    if perms.mcp_tools {
+        state.mcp.load_configs(&workspace_path).await;
+    }
+    let mcp_tools = if perms.mcp_tools {
+        state.mcp.get_tools().await
+    } else {
+        Vec::new()
+    };
+    let mcp_str = if mcp_tools.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nCONNECTED MCP TOOLS (Model Context Protocol):\n{}",
+            mcp_tools.iter().map(|t| format!("- mcp__{}__{}: {}", t.server_name, t.name, t.description)).collect::<Vec<_>>().join("\n")
+        )
+    };
+
+    // 6. Auto-inject project_context.md (Active Context) if present
+    let project_context_path = workspace_path.join("project_context.md");
+    let project_context_str = if tokio::fs::try_exists(&project_context_path).await.unwrap_or(false) {
+        if let Ok(content) = tokio::fs::read_to_string(&project_context_path).await {
+            let truncated = content.lines().take(60).collect::<Vec<_>>().join("\n");
+            format!("\n\n[PROJECT CONTEXT & ARCHITECTURE (project_context.md)]:\n{}", truncated)
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    // 7. Auto-detect wiki/ documentation directory
+    let wiki_path = workspace_path.join("wiki");
+    let wiki_str = if tokio::fs::try_exists(&wiki_path).await.unwrap_or(false) {
+        let mut wiki_files = Vec::new();
+        if let Ok(mut w_entries) = tokio::fs::read_dir(&wiki_path).await {
+            while let Ok(Some(we)) = w_entries.next_entry().await {
+                let w_name = we.file_name().to_string_lossy().into_owned();
+                if w_name.ends_with(".md") {
+                    wiki_files.push(w_name);
+                }
+            }
+        }
+        wiki_files.sort();
+        if !wiki_files.is_empty() {
+            format!("\n\n[WORKSPACE WIKI & REGISTRIES (wiki/)]:\nAvailable docs: {}", wiki_files.join(", "))
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
     let p_summary = format!(
-        "read_files={}, write_files={}, terminal_exec={}, web_search={}, git_ops={}",
-        perms.read_files, perms.write_files, perms.terminal_exec, perms.web_search, perms.git_ops
+        "read_files={}, write_files={}, terminal_exec={}, web_search={}, git_ops={}, mcp_tools={}, subagents={}",
+        perms.read_files, perms.write_files, perms.terminal_exec, perms.web_search, perms.git_ops, perms.mcp_tools, perms.subagents
     );
 
     let system_prompt = format!(
@@ -532,6 +627,9 @@ async fn handle_chat(
         - Active Living Tasks:\n{}\
         {}\
         {}\
+        {}\
+        {}\
+        {}\
         {}\n\n\
         SECURITY POLICY:\n\
         You are strictly confined to the Active Workspace Root. Do not attempt to access or modify any paths outside it.",
@@ -542,7 +640,10 @@ async fn handle_chat(
         tasks_str,
         gotchas_str,
         skills_str,
-        adaptive_memory
+        mcp_str,
+        adaptive_memory,
+        project_context_str,
+        wiki_str
     );
 
 
@@ -564,30 +665,33 @@ async fn handle_chat(
         messages_payload.push(serde_json::json!({ "role": "user", "content": payload.message }));
     }
 
-    // --- Route: cloud model (contains '/') → OpenAI-compat provider ---
-    let is_cloud = target_model.contains('/');
+    // Resolve provider:
+    // 1. Check if target_model matches any configured provider (or if that provider is active)
+    let providers_list = state.storage.get_providers().unwrap_or_default();
+    let matching_custom_provider = providers_list.iter()
+        .find(|p| p.provider_type != "ollama" && !p.default_model.is_empty() && p.default_model == target_model)
+        .or_else(|| {
+            providers_list.iter().find(|p| p.is_active && p.provider_type != "ollama")
+        });
+
+    let is_cloud = matching_custom_provider.is_some() || target_model.contains('/');
 
     if is_cloud {
-        // Resolve provider: check active custom provider first, fallback to OpenRouter
-        let (base_url, api_key) = {
-            // Check if there's an active custom provider that isn't ollama
-            let custom = state.storage.get_providers().ok()
-                .and_then(|ps| ps.into_iter().find(|p| p.is_active && p.provider_type != "ollama"));
-            if let Some(p) = custom {
-                (p.base_url, p.api_key)
-            } else {
-                let key = state.storage.get_setting("openrouter_key")
-                    .unwrap_or(None)
-                    .unwrap_or_default();
-                ("https://openrouter.ai/api/v1".to_string(), key)
-            }
+        // Resolve base_url and api_key
+        let (base_url, api_key) = if let Some(p) = matching_custom_provider {
+            (p.base_url.clone(), p.api_key.clone())
+        } else {
+            let key = state.storage.get_setting("openrouter_key")
+                .unwrap_or(None)
+                .unwrap_or_default();
+            ("https://openrouter.ai/api/v1".to_string(), key)
         };
 
         if api_key.is_empty() {
             return Json(ChatResp {
                 status: "no_api_key".into(),
                 model: target_model,
-                reply: "No API key configured. Open Settings (⚙) and add your OpenRouter key to use cloud models.".into(),
+                reply: "No API key configured. Open Settings (⚙) and configure the provider's API key.".into(),
                 thinking: String::new(),
                 duration_ms: start.elapsed().as_millis() as u64,
                 completed_task: None,
@@ -599,10 +703,18 @@ async fn handle_chat(
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        let tool_definitions = tools::definitions_for_permissions(&perms);
+        let mut tool_definitions = tools::definitions_for_permissions(&perms);
+        for t in &mcp_tools {
+            let mcp_fn_name = format!("mcp__{}__{}", t.server_name, t.name);
+            tool_definitions.push(tools::definition(
+                &mcp_fn_name,
+                &t.description,
+                t.input_schema.clone(),
+            ));
+        }
 
         let mut final_content = String::new();
-        let mut final_thinking = String::new();
+        let final_thinking = String::new();
         let mut served_model = target_model.clone();
 
 
@@ -673,17 +785,30 @@ async fn handle_chat(
                                     let fn_args_raw = fn_obj.and_then(|f| f.get("arguments")).and_then(|v| v.as_str()).unwrap_or("{}");
                                     let fn_args: serde_json::Value = serde_json::from_str(fn_args_raw).unwrap_or_else(|_| serde_json::json!({}));
 
-                                    let exec_result = tools::execute_with_permissions(
-                                        fn_name,
-                                        &fn_args,
-                                        &workspace_path,
-                                        &skills,
-                                        &perms,
-                                    ).await;
-
-                                    let tool_output = match exec_result {
-                                        Ok(out) => out,
-                                        Err(err) => format!("Error executing {}: {}", fn_name, err),
+                                    let tool_output = if fn_name.starts_with("mcp__") {
+                                        let parts: Vec<&str> = fn_name.splitn(3, "__").collect();
+                                        if parts.len() == 3 {
+                                            let s_name = parts[1];
+                                            let t_name = parts[2];
+                                            match state.mcp.execute_tool(s_name, t_name, &fn_args, &workspace_path).await {
+                                                Ok(out) => out,
+                                                Err(err) => format!("MCP Error executing {}: {}", fn_name, err),
+                                            }
+                                        } else {
+                                            format!("Malformed MCP tool name: {}", fn_name)
+                                        }
+                                    } else {
+                                        let exec_result = tools::execute_with_permissions(
+                                            fn_name,
+                                            &fn_args,
+                                            &workspace_path,
+                                            &skills,
+                                            &perms,
+                                        ).await;
+                                        match exec_result {
+                                            Ok(out) => out,
+                                            Err(err) => format!("Error executing {}: {}", fn_name, err),
+                                        }
                                     };
 
                                     messages_payload.push(serde_json::json!({
@@ -723,6 +848,17 @@ async fn handle_chat(
             }
         }
 
+        if final_content.trim().is_empty() && final_thinking.trim().is_empty() {
+            return Json(ChatResp {
+                status: "empty_response".into(),
+                model: target_model,
+                reply: "Model completed processing without returning a text summary. Check active tasks or inspect workspace logs.".into(),
+                thinking: String::new(),
+                duration_ms: start.elapsed().as_millis() as u64,
+                completed_task: None,
+            });
+        }
+
         let _ = state.storage.add_message(conversation_id, "assistant", &final_content, &final_thinking);
         let completed_task = state.storage.complete_next_task(project_id).ok().flatten();
         let display_model = if served_model != target_model && !served_model.is_empty() {
@@ -747,7 +883,15 @@ async fn handle_chat(
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        let tool_definitions = tools::definitions_for_permissions(&perms);
+        let mut tool_definitions = tools::definitions_for_permissions(&perms);
+        for t in &mcp_tools {
+            let mcp_fn_name = format!("mcp__{}__{}", t.server_name, t.name);
+            tool_definitions.push(tools::definition(
+                &mcp_fn_name,
+                &t.description,
+                t.input_schema.clone(),
+            ));
+        }
         let mut final_content = String::new();
         let mut final_thinking = String::new();
 
@@ -770,6 +914,17 @@ async fn handle_chat(
             match res {
                 Ok(resp) => {
                     if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        if let Some(err) = body.get("error").and_then(|e| e.as_str()) {
+                            return Json(ChatResp {
+                                status: "provider_error".into(),
+                                model: target_model,
+                                reply: format!("Ollama error: {}", err),
+                                thinking: String::new(),
+                                duration_ms: start.elapsed().as_millis() as u64,
+                                completed_task: None,
+                            });
+                        }
+
                         let message_obj = body.get("message");
                         let content = message_obj.and_then(|m| m.get("content")).and_then(|c| c.as_str()).unwrap_or("").to_string();
                         let thinking = message_obj.and_then(|m| m.get("thinking")).and_then(|t| t.as_str()).unwrap_or("").to_string();
@@ -794,17 +949,30 @@ async fn handle_chat(
                                     let fn_name = fn_obj.and_then(|f| f.get("name")).and_then(|v| v.as_str()).unwrap_or("");
                                     let fn_args = fn_obj.and_then(|f| f.get("arguments")).cloned().unwrap_or_else(|| serde_json::json!({}));
 
-                                    let exec_result = tools::execute_with_permissions(
-                                        fn_name,
-                                        &fn_args,
-                                        &workspace_path,
-                                        &skills,
-                                        &perms,
-                                    ).await;
-
-                                    let tool_output = match exec_result {
-                                        Ok(out) => out,
-                                        Err(err) => format!("Error executing {}: {}", fn_name, err),
+                                    let tool_output = if fn_name.starts_with("mcp__") {
+                                        let parts: Vec<&str> = fn_name.splitn(3, "__").collect();
+                                        if parts.len() == 3 {
+                                            let s_name = parts[1];
+                                            let t_name = parts[2];
+                                            match state.mcp.execute_tool(s_name, t_name, &fn_args, &workspace_path).await {
+                                                Ok(out) => out,
+                                                Err(err) => format!("MCP Error executing {}: {}", fn_name, err),
+                                            }
+                                        } else {
+                                            format!("Malformed MCP tool name: {}", fn_name)
+                                        }
+                                    } else {
+                                        let exec_result = tools::execute_with_permissions(
+                                            fn_name,
+                                            &fn_args,
+                                            &workspace_path,
+                                            &skills,
+                                            &perms,
+                                        ).await;
+                                        match exec_result {
+                                            Ok(out) => out,
+                                            Err(err) => format!("Error executing {}: {}", fn_name, err),
+                                        }
                                     };
 
                                     messages_payload.push(serde_json::json!({
@@ -840,6 +1008,17 @@ async fn handle_chat(
                     });
                 }
             }
+        }
+
+        if final_content.is_empty() && final_thinking.is_empty() {
+            return Json(ChatResp {
+                status: "empty_response".into(),
+                model: target_model,
+                reply: "Model returned an empty response. Please verify the model is installed or try a different prompt.".into(),
+                thinking: String::new(),
+                duration_ms: start.elapsed().as_millis() as u64,
+                completed_task: None,
+            });
         }
 
         let _ = state.storage.add_message(conversation_id, "assistant", &final_content, &final_thinking);
@@ -1042,6 +1221,74 @@ async fn create_conversation(
 ) -> Json<serde_json::Value> {
     let id = state.storage.add_conversation(project_id, &payload.title).unwrap_or(1);
     Json(serde_json::json!({ "id": id, "project_id": project_id, "title": payload.title }))
+}
+
+async fn delete_conversation(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+) -> &'static str {
+    let _ = state.storage.delete_conversation(id);
+    "Deleted"
+}
+
+#[derive(Serialize)]
+pub struct ProjectFileInfo {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub icon_class: String,
+    pub color_class: String,
+}
+
+async fn get_project_files(
+    State(state): State<AppState>,
+    Path(project_id): Path<u64>,
+) -> Json<Vec<ProjectFileInfo>> {
+    let project_obj = state.storage.get_project_by_id(project_id).ok().flatten();
+    let ws_path = project_obj
+        .map(|p| PathBuf::from(p.path))
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
+
+    let mut result = Vec::new();
+    if let Ok(mut entries) = tokio::fs::read_dir(&ws_path).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') || name == "target" || name == "node_modules" {
+                continue;
+            }
+            let is_dir = entry.file_type().await.map(|ft| ft.is_dir()).unwrap_or(false);
+            let ext = std::path::Path::new(&name).extension().and_then(|s| s.to_str()).unwrap_or("");
+            
+            let (icon_class, color_class) = if is_dir {
+                ("fa-solid fa-folder", "text-purple-400")
+            } else {
+                match ext {
+                    "rs" => ("fa-brands fa-rust", "text-amber-400"),
+                    "html" | "htm" => ("fa-brands fa-html5", "text-rose-400"),
+                    "css" => ("fa-brands fa-css3-alt", "text-sky-400"),
+                    "js" | "mjs" | "ts" => ("fa-brands fa-js", "text-yellow-400"),
+                    "toml" | "yaml" | "yml" | "json" => ("fa-solid fa-gear", "text-emerald-400"),
+                    "md" => ("fa-solid fa-file-lines", "text-purple-300"),
+                    _ => ("fa-solid fa-file-code", "text-slate-400"),
+                }
+            };
+
+            result.push(ProjectFileInfo {
+                name: if is_dir { format!("{}/", name) } else { name },
+                path: entry.path().to_string_lossy().into_owned(),
+                is_dir,
+                icon_class: icon_class.to_string(),
+                color_class: color_class.to_string(),
+            });
+
+            if result.len() >= 30 {
+                break;
+            }
+        }
+    }
+    result.sort_by(|a, b| b.is_dir.cmp(&a.is_dir).then_with(|| a.name.cmp(&b.name)));
+    Json(result)
 }
 
 async fn get_tasks(

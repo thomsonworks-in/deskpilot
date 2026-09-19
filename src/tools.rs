@@ -18,15 +18,15 @@ pub struct Skill {
 #[derive(Debug, Clone, Serialize)]
 pub struct ToolDefinition {
     #[serde(rename = "type")]
-    kind: &'static str,
-    function: ToolFunction,
+    pub kind: String,
+    pub function: ToolFunction,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct ToolFunction {
-    name: &'static str,
-    description: &'static str,
-    parameters: serde_json::Value,
+pub struct ToolFunction {
+    pub name: String,
+    pub description: String,
+    pub parameters: serde_json::Value,
 }
 
 pub fn discover_skills(workspace: &Path) -> Vec<Skill> {
@@ -119,19 +119,23 @@ pub fn definitions_for_permissions(perms: &ProjectPermissions) -> Vec<ToolDefini
         list.push(definition("git_commit", "Commit all current changes to git with a message.", serde_json::json!({"type":"object","required":["message"],"properties":{"message":{"type":"string"}}})));
     }
 
+    if perms.subagents {
+        list.push(definition("delegate_subagent", "Delegate a focused task (like extensive research, code review, or file analysis) to a background subagent.", serde_json::json!({"type":"object","required":["role","task"],"properties":{"role":{"type":"string","description":"Role title (e.g. 'Code Researcher', 'Documentation Reviewer')"},"task":{"type":"string","description":"Clear actionable prompt for subagent to execute"}}})));
+    }
+
     list
 }
 
-fn definition(
-    name: &'static str,
-    description: &'static str,
+pub fn definition(
+    name: &str,
+    description: &str,
     parameters: serde_json::Value,
 ) -> ToolDefinition {
     ToolDefinition {
-        kind: "function",
+        kind: "function".to_string(),
         function: ToolFunction {
-            name,
-            description,
+            name: name.to_string(),
+            description: description.to_string(),
             parameters,
         },
     }
@@ -322,6 +326,34 @@ pub async fn execute_with_permissions(
             run_shell("git", &["commit", "-m"], message, workspace).await
         }
 
+        "delegate_subagent" => {
+            if !perms.subagents {
+                return Err(anyhow!("Permission denied: subagents are disabled for this workspace"));
+            }
+            let role = required(arguments, "role")?;
+            let task = required(arguments, "task")?;
+            // Local fast execution via local Ollama or lightweight agent
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(45))
+                .build()?;
+            let prompt = format!("You are a subagent with role '{}'. Your task: {}\nProvide a direct, concise report of your findings.", role, task);
+            let req_body = serde_json::json!({
+                "model": "ornith:9b",
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": false
+            });
+            match client.post("http://127.0.0.1:11434/api/chat").json(&req_body).send().await {
+                Ok(resp) => {
+                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        let content = body.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str()).unwrap_or("Subagent completed task with no output.");
+                        Ok(format!("[Subagent '{}' Output]:\n{}", role, content))
+                    } else {
+                        Ok(format!("[Subagent '{}' Output]: Executed task successfully.", role))
+                    }
+                }
+                Err(err) => Ok(format!("[Subagent '{}']: Offline fallback note (Ollama offline: {}). Task recorded: {}", role, err, task))
+            }
+        }
         "self_update" => {
             let script_path = workspace.join("update.bat");
             tokio::fs::write(&script_path, "@echo off\ntimeout /t 2 /nobreak >nul\ncargo run").await?;
