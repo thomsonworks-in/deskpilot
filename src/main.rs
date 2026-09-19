@@ -2,10 +2,8 @@
 
 mod ipc;
 mod message;
-mod ollama;
 mod single_instance;
 mod storage;
-mod tools;
 
 use std::sync::Arc;
 
