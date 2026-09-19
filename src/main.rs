@@ -4,6 +4,8 @@ mod ipc;
 mod message;
 mod single_instance;
 mod storage;
+pub mod tools;
+
 
 use std::sync::Arc;
 

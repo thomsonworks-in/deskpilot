@@ -37,7 +37,73 @@ pub struct Project {
     pub name: String,
     #[serde(default)]
     pub path: String,
+    #[serde(default = "default_trust_level")]
+    pub trust_level: String, // "readonly" | "readwrite" | "full" | "custom"
+    #[serde(default = "default_permissions")]
+    pub permissions: ProjectPermissions,
 }
+
+fn default_trust_level() -> String {
+    "readwrite".to_string()
+}
+
+fn default_permissions() -> ProjectPermissions {
+    ProjectPermissions::preset("readwrite")
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectPermissions {
+    #[serde(default = "default_true")]
+    pub read_files: bool,
+    #[serde(default = "default_true")]
+    pub write_files: bool,
+    #[serde(default = "default_true")]
+    pub terminal_exec: bool,
+    #[serde(default = "default_true")]
+    pub web_search: bool,
+    #[serde(default = "default_true")]
+    pub git_ops: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl ProjectPermissions {
+    pub fn preset(level: &str) -> Self {
+        match level {
+            "readonly" => Self {
+                read_files: true,
+                write_files: false,
+                terminal_exec: false,
+                web_search: true,
+                git_ops: false,
+            },
+            "readwrite" => Self {
+                read_files: true,
+                write_files: true,
+                terminal_exec: false,
+                web_search: true,
+                git_ops: false,
+            },
+            "full" => Self {
+                read_files: true,
+                write_files: true,
+                terminal_exec: true,
+                web_search: true,
+                git_ops: true,
+            },
+            _ => Self {
+                read_files: true,
+                write_files: true,
+                terminal_exec: false,
+                web_search: true,
+                git_ops: false,
+            },
+        }
+    }
+}
+
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
@@ -102,8 +168,11 @@ impl Storage {
         )?;
         
         let _ = conn.execute("ALTER TABLE projects ADD COLUMN path TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE projects ADD COLUMN trust_level TEXT NOT NULL DEFAULT 'readwrite'", []);
+        let _ = conn.execute("ALTER TABLE projects ADD COLUMN permissions TEXT NOT NULL DEFAULT '{\"read_files\":true,\"write_files\":true,\"terminal_exec\":false,\"web_search\":true,\"git_ops\":false}'", []);
         let _ = conn.execute("ALTER TABLE tasks ADD COLUMN project_id INTEGER NOT NULL DEFAULT 1", []);
-        let _ = conn.execute("INSERT OR IGNORE INTO projects (id, name, path) VALUES (1, 'deskpilot', 'D:\\Repos\\Deskpilot\\deskpilot')", []);
+        let _ = conn.execute("INSERT OR IGNORE INTO projects (id, name, path, trust_level) VALUES (1, 'deskpilot', 'D:\\Repos\\Deskpilot\\deskpilot', 'readwrite')", []);
+
         let _ = conn.execute("INSERT OR IGNORE INTO conversations (id, project_id, title, updated_at) VALUES (1, 1, 'PowerShell Install Script', 0)", []);
 
         let task_count: i64 = conn.query_row("SELECT count(*) FROM tasks", [], |r| r.get(0)).unwrap_or(0);
@@ -210,8 +279,24 @@ impl Storage {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
-        let mut statement = connection.prepare("SELECT id, name, COALESCE(path, '') FROM projects ORDER BY id")?;
-        let projects = statement.query_map([], |row| Ok(Project { id: row.get(0)?, name: row.get(1)?, path: row.get(2)? }))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut statement = connection.prepare("SELECT id, name, COALESCE(path, ''), COALESCE(trust_level, 'readwrite'), COALESCE(permissions, '') FROM projects ORDER BY id")?;
+        let projects = statement.query_map([], |row| {
+            let trust_level: String = row.get(3)?;
+            let raw_perms: String = row.get(4)?;
+            let permissions = if raw_perms.is_empty() {
+                ProjectPermissions::preset(&trust_level)
+            } else {
+                serde_json::from_str(&raw_perms).unwrap_or_else(|_| ProjectPermissions::preset(&trust_level))
+            };
+            Ok(Project {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                trust_level,
+                permissions,
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+
 
         let mut statement = connection.prepare("SELECT id, project_id, title, updated_at FROM conversations ORDER BY updated_at DESC")?;
         let conversations = statement.query_map([], |row| Ok(Conversation {
@@ -509,20 +594,61 @@ impl Storage {
 
     pub fn get_projects(&self) -> Result<Vec<Project>> {
         let conn = self.connection()?;
-        let mut stmt = conn.prepare("SELECT id, name, COALESCE(path, '') FROM projects ORDER BY id ASC")?;
+        let mut stmt = conn.prepare("SELECT id, name, COALESCE(path, ''), COALESCE(trust_level, 'readwrite'), COALESCE(permissions, '') FROM projects ORDER BY id ASC")?;
         let items = stmt.query_map([], |row| {
+            let trust_level: String = row.get(3)?;
+            let raw_perms: String = row.get(4)?;
+            let permissions = if raw_perms.is_empty() {
+                ProjectPermissions::preset(&trust_level)
+            } else {
+                serde_json::from_str(&raw_perms).unwrap_or_else(|_| ProjectPermissions::preset(&trust_level))
+            };
             Ok(Project {
                 id: row.get::<_, i64>(0)? as u64,
                 name: row.get(1)?,
                 path: row.get(2)?,
+                trust_level,
+                permissions,
             })
         })?.collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(items)
     }
 
-    pub fn add_project(&self, name: &str, path: &str) -> Result<u64> {
+    pub fn get_project_by_id(&self, id: u64) -> Result<Option<Project>> {
         let conn = self.connection()?;
-        conn.execute("INSERT INTO projects (name, path) VALUES (?1, ?2)", params![name, path])?;
+        let mut stmt = conn.prepare("SELECT id, name, COALESCE(path, ''), COALESCE(trust_level, 'readwrite'), COALESCE(permissions, '') FROM projects WHERE id = ?1")?;
+        let mut rows = stmt.query([id as i64])?;
+        if let Some(row) = rows.next()? {
+            let trust_level: String = row.get(3)?;
+            let raw_perms: String = row.get(4)?;
+            let permissions = if raw_perms.is_empty() {
+                ProjectPermissions::preset(&trust_level)
+            } else {
+                serde_json::from_str(&raw_perms).unwrap_or_else(|_| ProjectPermissions::preset(&trust_level))
+            };
+            Ok(Some(Project {
+                id: row.get::<_, i64>(0)? as u64,
+                name: row.get(1)?,
+                path: row.get(2)?,
+                trust_level,
+                permissions,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn add_project(&self, name: &str, path: &str, trust_level: Option<&str>, permissions: Option<&ProjectPermissions>) -> Result<u64> {
+        let conn = self.connection()?;
+        let trust = trust_level.unwrap_or("readwrite");
+        let perms = match permissions {
+            Some(p) => serde_json::to_string(p).unwrap_or_default(),
+            None => serde_json::to_string(&ProjectPermissions::preset(trust)).unwrap_or_default(),
+        };
+        conn.execute(
+            "INSERT INTO projects (name, path, trust_level, permissions) VALUES (?1, ?2, ?3, ?4)",
+            params![name, path, trust, perms],
+        )?;
         let project_id = conn.last_insert_rowid() as u64;
         let now = chrono::Utc::now().timestamp();
         let _ = conn.execute("INSERT INTO conversations (project_id, title, updated_at) VALUES (?1, 'Main Chat', ?2)", params![project_id as i64, now]);
@@ -537,6 +663,14 @@ impl Storage {
         conn.execute("UPDATE projects SET path = ?1 WHERE id = ?2", params![path, id as i64])?;
         Ok(())
     }
+
+    pub fn update_project_trust(&self, id: u64, trust_level: &str, permissions: &ProjectPermissions) -> Result<()> {
+        let conn = self.connection()?;
+        let perms = serde_json::to_string(permissions).unwrap_or_default();
+        conn.execute("UPDATE projects SET trust_level = ?1, permissions = ?2 WHERE id = ?3", params![trust_level, perms, id as i64])?;
+        Ok(())
+    }
+
 
     pub fn get_conversations(&self, project_id: u64) -> Result<Vec<Conversation>> {
         let conn = self.connection()?;

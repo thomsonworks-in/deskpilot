@@ -80,16 +80,89 @@
                 <span class="font-bold text-slate-200 tracking-wider uppercase text-[11px] hidden sm:inline">ThomsonWorks</span>
                 <span class="text-slate-600 hidden sm:inline">/</span>
                 <span class="font-medium text-purple-300">DeskPilot</span>
-                <span class="text-[9px] font-mono px-1 py-0.5 rounded bg-purple-950/40 text-purple-300 border border-purple-900/40">STUDIO</span>
             </div>
 
             <div class="h-3.5 w-px bg-[#262135]"></div>
 
-            <!-- Workspace Context Switcher -->
-            <div class="flex items-center space-x-1.5 bg-[#151221] border border-[#272238] rounded-md px-2 py-0.5 text-xs text-slate-300 hover:border-purple-600/60 transition cursor-pointer" onclick="openNewProjectModal()" title="Active project workspace">
-                <i class="fa-solid fa-folder text-purple-400 text-[10px]"></i>
-                <span id="active-project-name" class="text-[11px] text-slate-200 font-medium">deskpilot</span>
-                <span id="active-project-path-tag" class="text-[9px] text-slate-400 font-mono hidden md:inline truncate max-w-[140px]">D:\Repos\Deskpilot</span>
+            <!-- Native Open Project Button -->
+            <button onclick="pickNativeFolder()" class="flex items-center space-x-1.5 bg-[#161226] hover:bg-[#201838] border border-[#2c2246] hover:border-purple-500/70 rounded-md px-2.5 py-1 text-xs text-purple-200 font-medium transition shadow-sm" title="Open folder with native Windows file picker">
+                <i class="fa-solid fa-folder-open text-purple-400 text-xs"></i>
+                <span>Open Project</span>
+            </button>
+
+            <!-- Active Workspace Indicator -->
+            <div class="flex items-center space-x-1.5 bg-[#120f1e] border border-[#221b33] rounded-md px-2 py-1 text-xs text-slate-300" title="Active project folder (Jailed root)">
+                <span id="active-project-name" class="text-[11px] text-slate-200 font-medium truncate max-w-[110px]">deskpilot</span>
+                <span id="active-project-path-tag" class="text-[9px] text-slate-400 font-mono hidden md:inline truncate max-w-[130px]">D:\Repos\Deskpilot</span>
+            </div>
+
+            <!-- Trust & Permission Badge with Interactive Dropdown -->
+            <div class="relative">
+                <button onclick="toggleTrustPopover()" id="trust-badge-btn" class="flex items-center space-x-1.5 px-2 py-1 rounded-md text-[10px] font-mono font-medium bg-amber-950/40 text-amber-300 border border-amber-800/60 hover:border-amber-600 transition" title="Workspace security & trust level">
+                    <i id="trust-badge-icon" class="fa-solid fa-shield-halved text-amber-400 text-[9px]"></i>
+                    <span id="trust-badge-text">Read/Write</span>
+                    <i class="fa-solid fa-chevron-down text-[8px] text-amber-400/70"></i>
+                </button>
+
+                <!-- Trust Popover -->
+                <div id="trust-popover" class="hidden absolute left-0 top-8 z-50 w-72 p-3 bg-[#110e1c] border border-[#2b2240] rounded-xl shadow-2xl text-xs space-y-3 font-sans">
+                    <div class="flex items-center justify-between border-b border-[#201933] pb-2">
+                        <div class="flex items-center gap-1.5 font-semibold text-slate-200">
+                            <i class="fa-solid fa-shield text-purple-400 text-xs"></i>
+                            <span>Workspace Trust & Sandbox</span>
+                        </div>
+                        <span class="text-[9px] font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/60">JAILED</span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 leading-snug">
+                        Agent is restricted strictly inside the active project folder. Out-of-tree paths are blocked.
+                    </p>
+
+                    <!-- Trust Level Presets -->
+                    <div class="space-y-1">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Role Profile</label>
+                        <div class="grid grid-cols-3 gap-1 pt-0.5">
+                            <button type="button" onclick="selectTrustPreset('readonly')" id="btn-preset-readonly" class="px-2 py-1 text-[10px] rounded border border-[#28203d] hover:border-purple-600/70 text-slate-300 bg-[#161224] transition font-mono">
+                                🟢 Auditor<br><span class="text-[8px] text-slate-500">Read-Only</span>
+                            </button>
+                            <button type="button" onclick="selectTrustPreset('readwrite')" id="btn-preset-readwrite" class="px-2 py-1 text-[10px] rounded border border-amber-600/60 text-amber-300 bg-amber-950/30 transition font-mono">
+                                🟡 Dev<br><span class="text-[8px] text-slate-500">Read/Write</span>
+                            </button>
+                            <button type="button" onclick="selectTrustPreset('full')" id="btn-preset-full" class="px-2 py-1 text-[10px] rounded border border-[#28203d] hover:border-purple-600/70 text-slate-300 bg-[#161224] transition font-mono">
+                                🔴 Agent<br><span class="text-[8px] text-slate-500">Full + Shell</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Custom Granular Permissions -->
+                    <div class="space-y-1.5 border-t border-[#201933] pt-2">
+                        <label class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                            <span>Granular Permissions</span>
+                            <span class="text-[9px] text-purple-400 font-mono">custom</span>
+                        </label>
+                        <div class="space-y-1 text-[11px] text-slate-300">
+                            <label class="flex items-center justify-between cursor-pointer hover:text-white">
+                                <span>Read Files & Code</span>
+                                <input type="checkbox" id="perm-read-files" onchange="onCustomPermChange()" class="accent-purple-500 rounded">
+                            </label>
+                            <label class="flex items-center justify-between cursor-pointer hover:text-white">
+                                <span>Write & Edit Files</span>
+                                <input type="checkbox" id="perm-write-files" onchange="onCustomPermChange()" class="accent-purple-500 rounded">
+                            </label>
+                            <label class="flex items-center justify-between cursor-pointer hover:text-white">
+                                <span>Terminal / Shell Execution</span>
+                                <input type="checkbox" id="perm-terminal-exec" onchange="onCustomPermChange()" class="accent-purple-500 rounded">
+                            </label>
+                            <label class="flex items-center justify-between cursor-pointer hover:text-white">
+                                <span>Web Search & Internet (curl)</span>
+                                <input type="checkbox" id="perm-web-search" onchange="onCustomPermChange()" class="accent-purple-500 rounded">
+                            </label>
+                            <label class="flex items-center justify-between cursor-pointer hover:text-white">
+                                <span>Git Operations (commit/rollback)</span>
+                                <input type="checkbox" id="perm-git-ops" onchange="onCustomPermChange()" class="accent-purple-500 rounded">
+                            </label>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -143,6 +216,7 @@
             </button>
         </div>
     </header>
+
 
     <!-- 2. MAIN APP SHELL (3 COLUMNS) -->
     <div class="flex-1 flex overflow-hidden">
@@ -741,10 +815,17 @@
 
                 <div>
                     <label class="block text-slate-300 font-semibold mb-1">Project Directory Path</label>
-                    <input id="new-proj-path" type="text" placeholder="e.g. D:\Repos\PodOps or C:\Users\Projects\App" 
-                        class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-600 font-mono text-[11px]" />
-                    <p class="text-[10px] text-slate-500 mt-1">Local path where DeskPilot will execute tasks and AST analysis.</p>
+                    <div class="flex items-center gap-1.5">
+                        <input id="new-proj-path" type="text" placeholder="e.g. D:\Repos\MyProject" 
+                            class="flex-1 bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-600 font-mono text-[11px]" />
+                        <button type="button" onclick="browseFolderForInput('new-proj-path', 'new-proj-name')" class="px-3 py-2.5 rounded-lg bg-[#1a1429] hover:bg-[#251d3b] border border-[#2e2448] text-purple-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition" title="Browse Native Folder">
+                            <i class="fa-solid fa-folder-open text-purple-400"></i>
+                            <span>Browse</span>
+                        </button>
+                    </div>
+                    <p class="text-[10px] text-slate-500 mt-1">Local path where DeskPilot will execute tasks inside its sandbox.</p>
                 </div>
+
 
                 <!-- Quick Path Suggestions -->
                 <div class="pt-1">
@@ -787,8 +868,15 @@
 
                 <div>
                     <label class="block text-slate-300 font-semibold mb-1">Project Workspace Path</label>
-                    <input id="edit-proj-path" type="text" class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-600 font-mono text-[11px]" />
+                    <div class="flex items-center gap-1.5">
+                        <input id="edit-proj-path" type="text" class="flex-1 bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-600 font-mono text-[11px]" />
+                        <button type="button" onclick="browseFolderForInput('edit-proj-path')" class="px-3 py-2.5 rounded-lg bg-[#1a1429] hover:bg-[#251d3b] border border-[#2e2448] text-purple-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition" title="Browse Native Folder">
+                            <i class="fa-solid fa-folder-open text-purple-400"></i>
+                            <span>Browse</span>
+                        </button>
+                    </div>
                 </div>
+
             </div>
 
             <div class="flex items-center justify-between pt-3 border-t border-[#201a30]">
@@ -1016,12 +1104,159 @@
                 document.getElementById('active-project-path-tag').innerText = proj.path || 'No path';
                 document.getElementById('inspector-proj-name').innerText = proj.name;
                 document.getElementById('inspector-proj-path').innerText = proj.path || 'No path configured';
+                updateTrustUI(proj.trust_level || 'readwrite', proj.permissions);
             }
             if (refresh) {
                 renderProjectsTree();
                 loadTasks();
             }
         }
+
+        // Native File Picker
+        async function pickNativeFolder() {
+            try {
+                const res = await fetch('/api/dialog/pick-folder', { method: 'POST' });
+                const data = await res.json();
+                if (data.selected && data.path) {
+                    // Check if project already exists
+                    let existing = projectsCache.find(p => p.path.toLowerCase() === data.path.toLowerCase());
+                    if (existing) {
+                        setActiveProject(existing.id);
+                        return;
+                    }
+                    // Create new project with native path
+                    const projRes = await fetch('/api/projects', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: data.name || 'project',
+                            path: data.path,
+                            trust_level: 'readwrite',
+                            permissions: { read_files: true, write_files: true, terminal_exec: false, web_search: true, git_ops: false }
+                        })
+                    });
+                    const newProj = await projRes.json();
+                    await loadProjects();
+                    setActiveProject(newProj.id);
+                    resetChatToInstructional();
+                }
+            } catch (err) {
+                console.error("Failed to pick native folder:", err);
+            }
+        }
+
+        async function browseFolderForInput(pathInputId, nameInputId) {
+            try {
+                const res = await fetch('/api/dialog/pick-folder', { method: 'POST' });
+                const data = await res.json();
+                if (data.selected && data.path) {
+                    const pathEl = document.getElementById(pathInputId);
+                    if (pathEl) pathEl.value = data.path;
+                    if (nameInputId) {
+                        const nameEl = document.getElementById(nameInputId);
+                        if (nameEl && !nameEl.value.trim()) nameEl.value = data.name;
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to browse folder:", err);
+            }
+        }
+
+        // Trust & Permission Management
+        function toggleTrustPopover() {
+            const popover = document.getElementById('trust-popover');
+            if (popover) popover.classList.toggle('hidden');
+        }
+
+        function updateTrustUI(level, perms) {
+            const btn = document.getElementById('trust-badge-btn');
+            const icon = document.getElementById('trust-badge-icon');
+            const text = document.getElementById('trust-badge-text');
+            if (!btn || !icon || !text) return;
+
+            // Reset presets highlighting
+            ['readonly', 'readwrite', 'full'].forEach(p => {
+                const b = document.getElementById('btn-preset-' + p);
+                if (b) {
+                    b.className = (p === level)
+                        ? 'px-2 py-1 text-[10px] rounded border border-purple-500 text-purple-200 bg-purple-950/50 transition font-mono font-semibold'
+                        : 'px-2 py-1 text-[10px] rounded border border-[#28203d] hover:border-purple-600/70 text-slate-300 bg-[#161224] transition font-mono';
+                }
+            });
+
+            if (level === 'readonly') {
+                btn.className = 'flex items-center space-x-1.5 px-2 py-1 rounded-md text-[10px] font-mono font-medium bg-emerald-950/40 text-emerald-300 border border-emerald-800/60 hover:border-emerald-600 transition';
+                icon.className = 'fa-solid fa-lock text-emerald-400 text-[9px]';
+                text.innerText = 'Read-Only';
+            } else if (level === 'readwrite') {
+                btn.className = 'flex items-center space-x-1.5 px-2 py-1 rounded-md text-[10px] font-mono font-medium bg-amber-950/40 text-amber-300 border border-amber-800/60 hover:border-amber-600 transition';
+                icon.className = 'fa-solid fa-shield-halved text-amber-400 text-[9px]';
+                text.innerText = 'Read/Write';
+            } else if (level === 'full') {
+                btn.className = 'flex items-center space-x-1.5 px-2 py-1 rounded-md text-[10px] font-mono font-medium bg-rose-950/40 text-rose-300 border border-rose-800/60 hover:border-rose-600 transition';
+                icon.className = 'fa-solid fa-bolt text-rose-400 text-[9px]';
+                text.innerText = 'Full Agent';
+            } else {
+                btn.className = 'flex items-center space-x-1.5 px-2 py-1 rounded-md text-[10px] font-mono font-medium bg-purple-950/40 text-purple-300 border border-purple-800/60 hover:border-purple-600 transition';
+                icon.className = 'fa-solid fa-sliders text-purple-400 text-[9px]';
+                text.innerText = 'Custom';
+            }
+
+            // Sync checkboxes
+            if (perms) {
+                const r = document.getElementById('perm-read-files');
+                const w = document.getElementById('perm-write-files');
+                const t = document.getElementById('perm-terminal-exec');
+                const s = document.getElementById('perm-web-search');
+                const g = document.getElementById('perm-git-ops');
+                if (r) r.checked = !!perms.read_files;
+                if (w) w.checked = !!perms.write_files;
+                if (t) t.checked = !!perms.terminal_exec;
+                if (s) s.checked = !!perms.web_search;
+                if (g) g.checked = !!perms.git_ops;
+            }
+        }
+
+        async function selectTrustPreset(level) {
+            let perms = {
+                read_files: true,
+                write_files: level !== 'readonly',
+                terminal_exec: level === 'full',
+                web_search: true,
+                git_ops: level === 'full'
+            };
+            await saveProjectTrust(level, perms);
+        }
+
+        async function onCustomPermChange() {
+            const perms = {
+                read_files: document.getElementById('perm-read-files')?.checked || false,
+                write_files: document.getElementById('perm-write-files')?.checked || false,
+                terminal_exec: document.getElementById('perm-terminal-exec')?.checked || false,
+                web_search: document.getElementById('perm-web-search')?.checked || false,
+                git_ops: document.getElementById('perm-git-ops')?.checked || false,
+            };
+            await saveProjectTrust('custom', perms);
+        }
+
+        async function saveProjectTrust(trustLevel, permissions) {
+            updateTrustUI(trustLevel, permissions);
+            try {
+                await fetch(`/api/projects/${currentProject}/trust`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ trust_level: trustLevel, permissions })
+                });
+                const proj = projectsCache.find(p => p.id === currentProject);
+                if (proj) {
+                    proj.trust_level = trustLevel;
+                    proj.permissions = permissions;
+                }
+            } catch (err) {
+                console.error("Failed to update trust level:", err);
+            }
+        }
+
 
         async function switchConversation(convId) {
             currentConversation = convId;
@@ -1851,7 +2086,16 @@
                     projectMenu.classList.add('hidden');
                 }
             }
+
+            const trustPopover = document.getElementById('trust-popover');
+            const trustBtn = document.getElementById('trust-badge-btn');
+            if (trustPopover && !trustPopover.classList.contains('hidden')) {
+                if (!trustPopover.contains(e.target) && !trustBtn.contains(e.target)) {
+                    trustPopover.classList.add('hidden');
+                }
+            }
         });
+
 
         let currentSelectedModel = 'ornith:9b';
         let allModelsData = { local: [], cloud: [], active: '', has_openrouter_key: false };

@@ -83,22 +83,43 @@ fn frontmatter(text: &str, key: &str) -> Option<String> {
     })
 }
 
+use crate::storage::ProjectPermissions;
+
 pub fn definitions() -> Vec<ToolDefinition> {
-    vec![
-        definition("read_file", "Read a UTF-8 text file inside the workspace.", serde_json::json!({"type":"object","required":["path"],"properties":{"path":{"type":"string"}}})),
-        definition("list_files", "List files inside a workspace directory.", serde_json::json!({"type":"object","properties":{"path":{"type":"string"}}})),
-        definition("read_skill", "Load the full instructions for an available SKILL.md by skill name.", serde_json::json!({"type":"object","required":["name"],"properties":{"name":{"type":"string"}}})),
-        definition("web_search", "Search the live public internet using a search query and return top results.", serde_json::json!({"type":"object","required":["query"],"properties":{"query":{"type":"string"}}})),
-        definition("curl", "Make an HTTP GET request and return the response body. Use only when the user requests internet access.", serde_json::json!({"type":"object","required":["url"],"properties":{"url":{"type":"string"}}})),
-        definition("powershell", "Run a non-destructive PowerShell command in the workspace.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})),
-        definition("bash", "Run a non-destructive bash command in the workspace when bash is installed.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})),
-        definition("write_file", "Write text content to a file in the workspace, overwriting it. Path must be relative to workspace.", serde_json::json!({"type":"object","required":["path", "content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}})),
-        definition("replace_file_content", "Surgically edit an existing file by finding exact target_content and replacing it with replacement_content. Avoids full file overwrites.", serde_json::json!({"type":"object","required":["path", "target_content", "replacement_content"],"properties":{"path":{"type":"string"},"target_content":{"type":"string"},"replacement_content":{"type":"string"}}})),
-        definition("rollback_workspace", "Rollback files to the last git checkpoint before agent modifications.", serde_json::json!({"type":"object","properties":{}})),
-        definition("repo_map", "Generate a condensed structural summary of key code files, definitions, and workspace tree in under 2000 tokens.", serde_json::json!({"type":"object","properties":{}})),
-        definition("git_commit", "Commit all current changes to git with a message.", serde_json::json!({"type":"object","required":["message"],"properties":{"message":{"type":"string"}}})),
-        definition("self_update", "Rebuild and restart the DeskPilot application.", serde_json::json!({"type":"object","properties":{}})),
-    ]
+    definitions_for_permissions(&ProjectPermissions::preset("full"))
+}
+
+pub fn definitions_for_permissions(perms: &ProjectPermissions) -> Vec<ToolDefinition> {
+    let mut list = Vec::new();
+
+    if perms.read_files {
+        list.push(definition("read_file", "Read a UTF-8 text file inside the workspace.", serde_json::json!({"type":"object","required":["path"],"properties":{"path":{"type":"string"}}})));
+        list.push(definition("list_files", "List files inside a workspace directory.", serde_json::json!({"type":"object","properties":{"path":{"type":"string"}}})));
+        list.push(definition("read_skill", "Load the full instructions for an available SKILL.md by skill name.", serde_json::json!({"type":"object","required":["name"],"properties":{"name":{"type":"string"}}})));
+        list.push(definition("repo_map", "Generate a condensed structural summary of key code files, definitions, and workspace tree in under 2000 tokens.", serde_json::json!({"type":"object","properties":{}})));
+    }
+
+    if perms.web_search {
+        list.push(definition("web_search", "Search the live public internet using a search query and return top results.", serde_json::json!({"type":"object","required":["query"],"properties":{"query":{"type":"string"}}})));
+        list.push(definition("curl", "Make an HTTP GET request and return the response body. Use only when the user requests internet access.", serde_json::json!({"type":"object","required":["url"],"properties":{"url":{"type":"string"}}})));
+    }
+
+    if perms.write_files {
+        list.push(definition("write_file", "Write text content to a file in the workspace, overwriting it. Path must be relative to workspace.", serde_json::json!({"type":"object","required":["path", "content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}})));
+        list.push(definition("replace_file_content", "Surgically edit an existing file by finding exact target_content and replacing it with replacement_content. Avoids full file overwrites.", serde_json::json!({"type":"object","required":["path", "target_content", "replacement_content"],"properties":{"path":{"type":"string"},"target_content":{"type":"string"},"replacement_content":{"type":"string"}}})));
+    }
+
+    if perms.terminal_exec {
+        list.push(definition("powershell", "Run a non-destructive PowerShell command in the workspace.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})));
+        list.push(definition("bash", "Run a non-destructive bash command in the workspace when bash is installed.", serde_json::json!({"type":"object","required":["command"],"properties":{"command":{"type":"string"}}})));
+    }
+
+    if perms.git_ops {
+        list.push(definition("rollback_workspace", "Rollback files to the last git checkpoint before agent modifications.", serde_json::json!({"type":"object","properties":{}})));
+        list.push(definition("git_commit", "Commit all current changes to git with a message.", serde_json::json!({"type":"object","required":["message"],"properties":{"message":{"type":"string"}}})));
+    }
+
+    list
 }
 
 fn definition(
@@ -122,8 +143,21 @@ pub async fn execute(
     workspace: &Path,
     skills: &[Skill],
 ) -> Result<String> {
+    execute_with_permissions(name, arguments, workspace, skills, &ProjectPermissions::preset("full")).await
+}
+
+pub async fn execute_with_permissions(
+    name: &str,
+    arguments: &serde_json::Value,
+    workspace: &Path,
+    skills: &[Skill],
+    perms: &ProjectPermissions,
+) -> Result<String> {
     match name {
         "read_file" => {
+            if !perms.read_files {
+                return Err(anyhow!("Permission denied: read_files is disabled for this workspace"));
+            }
             let path = safe_path(workspace, required(arguments, "path")?)?;
             let text = tokio::fs::read_to_string(path)
                 .await
@@ -131,6 +165,9 @@ pub async fn execute(
             Ok(limit(text, 32_000))
         }
         "list_files" => {
+            if !perms.read_files {
+                return Err(anyhow!("Permission denied: read_files is disabled for this workspace"));
+            }
             let path = safe_path(
                 workspace,
                 arguments
@@ -150,7 +187,11 @@ pub async fn execute(
             }
             Ok(output.join("\n"))
         }
+
         "read_skill" => {
+            if !perms.read_files {
+                return Err(anyhow!("Permission denied: read_files is disabled for this workspace"));
+            }
             let requested = required(arguments, "name")?;
             let skill = skills
                 .iter()
@@ -159,6 +200,9 @@ pub async fn execute(
             Ok(limit(tokio::fs::read_to_string(&skill.path).await?, 48_000))
         }
         "web_search" => {
+            if !perms.web_search {
+                return Err(anyhow!("Permission denied: web_search is disabled for this workspace"));
+            }
             let query = required(arguments, "query")?;
             let url = format!("https://html.duckduckgo.com/html/?q={}", urlencoding_encode(query));
             let client = reqwest::Client::builder()
@@ -171,6 +215,9 @@ pub async fn execute(
             Ok(limit(parsed, 16_000))
         }
         "curl" => {
+            if !perms.web_search {
+                return Err(anyhow!("Permission denied: web_search / internet access is disabled for this workspace"));
+            }
             let url = required(arguments, "url")?;
             if !url.starts_with("https://") && !url.starts_with("http://") {
                 return Err(anyhow!("only HTTP(S) URLs are allowed"));
@@ -185,6 +232,9 @@ pub async fn execute(
             Ok(limit(response.text().await?, 48_000))
         }
         "powershell" => {
+            if !perms.terminal_exec {
+                return Err(anyhow!("Permission denied: terminal_exec is disabled for this workspace"));
+            }
             run_shell(
                 "powershell.exe",
                 &["-NoProfile", "-NonInteractive", "-Command"],
@@ -193,8 +243,16 @@ pub async fn execute(
             )
             .await
         }
-        "bash" => run_shell("bash", &["-lc"], required(arguments, "command")?, workspace).await,
+        "bash" => {
+            if !perms.terminal_exec {
+                return Err(anyhow!("Permission denied: terminal_exec is disabled for this workspace"));
+            }
+            run_shell("bash", &["-lc"], required(arguments, "command")?, workspace).await
+        }
         "write_file" => {
+            if !perms.write_files {
+                return Err(anyhow!("Permission denied: write_files is disabled for this workspace"));
+            }
             let requested = required(arguments, "path")?;
             let content = required(arguments, "content")?;
             let path = safe_new_path(workspace, requested)?;
@@ -202,6 +260,9 @@ pub async fn execute(
             Ok(format!("file {} written successfully", path.display()))
         }
         "replace_file_content" => {
+            if !perms.write_files {
+                return Err(anyhow!("Permission denied: write_files is disabled for this workspace"));
+            }
             let requested = required(arguments, "path")?;
             let target = required(arguments, "target_content")?;
             let replacement = required(arguments, "replacement_content")?;
@@ -219,11 +280,17 @@ pub async fn execute(
             Ok(format!("successfully replaced chunk in {}", path.display()))
         }
         "rollback_workspace" => {
+            if !perms.git_ops {
+                return Err(anyhow!("Permission denied: git_ops is disabled for this workspace"));
+            }
             run_shell("git", &["checkout", "--", "."], "", workspace).await?;
             run_shell("git", &["clean", "-fd"], "", workspace).await?;
             Ok("workspace successfully rolled back to clean git checkpoint".to_owned())
         }
         "repo_map" => {
+            if !perms.read_files {
+                return Err(anyhow!("Permission denied: read_files is disabled for this workspace"));
+            }
             let mut summary = Vec::new();
             let mut stack = vec![(workspace.to_path_buf(), 0_usize)];
             while let Some((dir, depth)) = stack.pop() {
@@ -247,10 +314,14 @@ pub async fn execute(
             Ok(format!("WORKSPACE STRUCTURE (Top files):\n{}", summary.join("\n")))
         }
         "git_commit" => {
+            if !perms.git_ops {
+                return Err(anyhow!("Permission denied: git_ops is disabled for this workspace"));
+            }
             let message = required(arguments, "message")?;
             run_shell("git", &[], "add .", workspace).await?;
             run_shell("git", &["commit", "-m"], message, workspace).await
         }
+
         "self_update" => {
             let script_path = workspace.join("update.bat");
             tokio::fs::write(&script_path, "@echo off\ntimeout /t 2 /nobreak >nul\ncargo run").await?;

@@ -8,7 +8,11 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use std::path::PathBuf;
 use crate::storage::Storage;
+use crate::tools;
+
+
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct IpcMessage {
@@ -38,12 +42,28 @@ pub struct ChatResp {
 pub struct CreateProjectReq {
     pub name: String,
     pub path: String,
+    pub trust_level: Option<String>,
+    pub permissions: Option<crate::storage::ProjectPermissions>,
 }
 
 #[derive(Deserialize)]
 pub struct UpdateProjectPathReq {
     pub path: String,
 }
+
+#[derive(Deserialize)]
+pub struct UpdateProjectTrustReq {
+    pub trust_level: String,
+    pub permissions: crate::storage::ProjectPermissions,
+}
+
+#[derive(Serialize)]
+pub struct PickFolderResp {
+    pub selected: bool,
+    pub path: String,
+    pub name: String,
+}
+
 
 #[derive(Deserialize)]
 pub struct CreateConversationReq {
@@ -177,7 +197,10 @@ pub async fn start_server(storage: Arc<Storage>) {
         .route("/api/messages/:conversation_id", get(get_messages))
         .route("/api/projects", get(get_projects).post(create_project))
         .route("/api/projects/:id/path", post(update_project_path))
+        .route("/api/projects/:id/trust", post(update_project_trust))
+        .route("/api/dialog/pick-folder", post(pick_folder_dialog))
         .route("/api/projects/:id/conversations", get(get_conversations).post(create_conversation))
+
         .route("/api/projects/:id/tasks", get(get_tasks).post(create_task))
         .route("/api/tasks/:id/toggle", post(toggle_task))
         .route("/api/chat/test-local", post(test_local_chat))
@@ -423,10 +446,106 @@ async fn handle_chat(
     let _ = state.storage.set_setting("selected_model", &target_model);
 
     let adaptive_memory = state.storage.get_adaptive_context(project_id);
+    let project_obj = state.storage.get_project_by_id(project_id).ok().flatten();
+    let perms = project_obj.as_ref().map(|p| p.permissions.clone()).unwrap_or_else(|| crate::storage::ProjectPermissions::preset("readwrite"));
+    let trust_level = project_obj.as_ref().map(|p| p.trust_level.clone()).unwrap_or_else(|| "readwrite".to_string());
+    let ws_path_str = project_obj.as_ref().map(|p| p.path.clone()).unwrap_or_default();
+    let workspace_path = if !ws_path_str.is_empty() {
+        PathBuf::from(&ws_path_str)
+    } else {
+        std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+    };
+
+    // 1. Build rapid overview of files currently inside the workspace root
+    let mut files_summary = Vec::new();
+    if let Ok(mut entries) = tokio::fs::read_dir(&workspace_path).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if !name.starts_with('.') && name != "target" && name != "node_modules" {
+                if let Ok(ft) = entry.file_type().await {
+                    if ft.is_dir() {
+                        files_summary.push(format!("{}/", name));
+                    } else {
+                        files_summary.push(name);
+                    }
+                }
+            }
+            if files_summary.len() >= 40 {
+                break;
+            }
+        }
+    }
+    let files_list_str = if files_summary.is_empty() {
+        "(Empty directory or path does not exist yet)".to_string()
+    } else {
+        files_summary.join(", ")
+    };
+
+    // 2. Load living todos
+    let active_tasks = state.storage.get_tasks(project_id).unwrap_or_default();
+    let tasks_str = if active_tasks.is_empty() {
+        "None pending".to_string()
+    } else {
+        active_tasks
+            .iter()
+            .take(6)
+            .map(|t| format!("- [{}] {}", if t.done { "x" } else { " " }, t.title))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    // 3. Load gotchas
+    let gotchas = state.storage.get_gotchas(project_id).unwrap_or_default();
+    let gotchas_str = if gotchas.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nPROJECT INVARIANTS & LESSONS LEARNED:\n{}",
+            gotchas.iter().take(5).map(|g| format!("- [{}]: {} -> Rule: {}", g.subsystem, g.gotcha_text, g.invariant_rule)).collect::<Vec<_>>().join("\n")
+        )
+    };
+
+    // 4. Discover custom SKILL.md files
+    let skills = tools::discover_skills(&workspace_path);
+    let skills_str = if skills.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\nAVAILABLE SKILLS:\n{}",
+            skills.iter().map(|s| format!("- {}: {}", s.name, s.description)).collect::<Vec<_>>().join("\n")
+        )
+    };
+
+    let p_summary = format!(
+        "read_files={}, write_files={}, terminal_exec={}, web_search={}, git_ops={}",
+        perms.read_files, perms.write_files, perms.terminal_exec, perms.web_search, perms.git_ops
+    );
+
     let system_prompt = format!(
-        "You are ThomsonWorks DeskPilot, an autonomous coding & workspace agent. Provide sharp, surgical responses with technical precision.\n{}",
+        "You are ThomsonWorks DeskPilot, an autonomous coding & workspace agent. You have native filesystem & tool access.\n\
+        You can inspect, read, create, and edit files in the active workspace using your provided tools.\n\n\
+        ACTIVE WORKSPACE ENVIRONMENT:\n\
+        - OS: Windows (x86_64)\n\
+        - Workspace Root: {}\n\
+        - Existing Files & Folders: [{}]\n\
+        - Trust & Permission Profile: {} ({})\n\
+        - Active Living Tasks:\n{}\
+        {}\
+        {}\
+        {}\n\n\
+        SECURITY POLICY:\n\
+        You are strictly confined to the Active Workspace Root. Do not attempt to access or modify any paths outside it.",
+        workspace_path.display(),
+        files_list_str,
+        trust_level,
+        p_summary,
+        tasks_str,
+        gotchas_str,
+        skills_str,
         adaptive_memory
     );
+
+
 
     // Build shared message history
     let mut messages_payload: Vec<serde_json::Value> = Vec::new();
@@ -480,84 +599,146 @@ async fn handle_chat(
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        // Convert Ollama message format → OpenAI format (same structure, already compatible)
-        let res = client
-            .post(format!("{}/chat/completions", base_url.trim_end_matches('/')))
-            .bearer_auth(&api_key)
-            .header("HTTP-Referer", "https://thomsonworks.in")
-            .header("X-Title", "DeskPilot")
-            .json(&serde_json::json!({
+        let tool_definitions = tools::definitions_for_permissions(&perms);
+
+        let mut final_content = String::new();
+        let mut final_thinking = String::new();
+        let mut served_model = target_model.clone();
+
+
+        // Multi-turn tool loop (up to 5 steps)
+        for _step in 0..5 {
+            let mut req_body = serde_json::json!({
                 "model": target_model,
                 "messages": messages_payload,
-            }))
-            .send()
-            .await;
+            });
+            if !tool_definitions.is_empty() {
+                req_body["tools"] = serde_json::to_value(&tool_definitions).unwrap_or_default();
+            }
 
-        match res {
-            Ok(resp) => {
-                if let Ok(body) = resp.json::<serde_json::Value>().await {
-                    let content = body.get("choices")
-                        .and_then(|c| c.get(0))
-                        .and_then(|c| c.get("message"))
-                        .and_then(|m| m.get("content"))
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let error_msg = body.get("error")
-                        .and_then(|e| e.get("message"))
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string());
-                    if let Some(err) = error_msg {
+            let res = client
+                .post(format!("{}/chat/completions", base_url.trim_end_matches('/')))
+                .bearer_auth(&api_key)
+                .header("HTTP-Referer", "https://thomsonworks.in")
+                .header("X-Title", "DeskPilot")
+                .json(&req_body)
+                .send()
+                .await;
+
+            match res {
+                Ok(resp) => {
+                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        if let Some(err) = body.get("error").and_then(|e| e.get("message")).and_then(|v| v.as_str()) {
+                            return Json(ChatResp {
+                                status: "provider_error".into(),
+                                model: target_model,
+                                reply: format!("Provider error: {}", err),
+                                thinking: String::new(),
+                                duration_ms: start.elapsed().as_millis() as u64,
+                                completed_task: None,
+                            });
+                        }
+
+                        if let Some(m) = body.get("model").and_then(|v| v.as_str()) {
+                            served_model = m.to_string();
+                        }
+
+                        let choice = body.get("choices").and_then(|c| c.get(0));
+                        let message_obj = choice.and_then(|c| c.get("message"));
+                        let content_opt = message_obj.and_then(|m| m.get("content")).and_then(|v| v.as_str());
+                        if let Some(c) = content_opt {
+                            final_content = c.to_string();
+                        }
+
+                        // Check if model emitted tool calls
+                        let tool_calls = message_obj
+                            .and_then(|m| m.get("tool_calls"))
+                            .and_then(|tc| tc.as_array())
+                            .cloned();
+
+                        if let Some(calls) = tool_calls {
+                            if !calls.is_empty() {
+                                // Add assistant's tool_calls message to context
+                                messages_payload.push(message_obj.cloned().unwrap_or_else(|| serde_json::json!({
+                                    "role": "assistant",
+                                    "content": final_content,
+                                    "tool_calls": calls
+                                })));
+
+                                // Execute each tool against the active workspace
+                                for call in calls {
+                                    let call_id = call.get("id").and_then(|v| v.as_str()).unwrap_or("call_1");
+                                    let fn_obj = call.get("function");
+                                    let fn_name = fn_obj.and_then(|f| f.get("name")).and_then(|v| v.as_str()).unwrap_or("");
+                                    let fn_args_raw = fn_obj.and_then(|f| f.get("arguments")).and_then(|v| v.as_str()).unwrap_or("{}");
+                                    let fn_args: serde_json::Value = serde_json::from_str(fn_args_raw).unwrap_or_else(|_| serde_json::json!({}));
+
+                                    let exec_result = tools::execute_with_permissions(
+                                        fn_name,
+                                        &fn_args,
+                                        &workspace_path,
+                                        &skills,
+                                        &perms,
+                                    ).await;
+
+                                    let tool_output = match exec_result {
+                                        Ok(out) => out,
+                                        Err(err) => format!("Error executing {}: {}", fn_name, err),
+                                    };
+
+                                    messages_payload.push(serde_json::json!({
+                                        "role": "tool",
+                                        "tool_call_id": call_id,
+                                        "content": tool_output,
+                                    }));
+                                }
+                                // Continue loop so the model sees tool results and formulates final answer
+                                continue;
+                            }
+                        }
+
+                        // No more tool calls: model reached final answer
+                        break;
+                    } else {
                         return Json(ChatResp {
-                            status: "provider_error".into(),
+                            status: "parse_error".into(),
                             model: target_model,
-                            reply: format!("Provider error: {}", err),
+                            reply: "Failed to parse cloud provider response".into(),
                             thinking: String::new(),
                             duration_ms: start.elapsed().as_millis() as u64,
                             completed_task: None,
                         });
                     }
-                    let _ = state.storage.add_message(conversation_id, "assistant", &content, "");
-                    let completed_task = state.storage.complete_next_task(project_id).ok().flatten();
-                    // OpenRouter returns the actual model that served the request in body["model"]
-                    let served_model = body.get("model")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or(&target_model)
-                        .to_string();
-                    // If routing changed the model, surface both (e.g. "deepseek/... → qwen/...")
-                    let display_model = if served_model != target_model && !served_model.is_empty() {
-                        format!("{} → {}", target_model, served_model)
-                    } else {
-                        served_model
-                    };
-                    Json(ChatResp {
-                        status: "ok".into(),
-                        model: display_model,
-                        reply: content,
-                        thinking: String::new(),
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        completed_task,
-                    })
-                } else {
-                    Json(ChatResp {
-                        status: "parse_error".into(),
+                }
+                Err(err) => {
+                    return Json(ChatResp {
+                        status: "connection_error".into(),
                         model: target_model,
-                        reply: "Failed to parse cloud provider response".into(),
+                        reply: format!("Could not reach cloud provider: {err}"),
                         thinking: String::new(),
                         duration_ms: start.elapsed().as_millis() as u64,
                         completed_task: None,
-                    })
+                    });
                 }
             }
-            Err(err) => Json(ChatResp {
-                status: "connection_error".into(),
-                model: target_model,
-                reply: format!("Could not reach cloud provider: {err}"),
-                thinking: String::new(),
-                duration_ms: start.elapsed().as_millis() as u64,
-                completed_task: None,
-            }),
         }
+
+        let _ = state.storage.add_message(conversation_id, "assistant", &final_content, &final_thinking);
+        let completed_task = state.storage.complete_next_task(project_id).ok().flatten();
+        let display_model = if served_model != target_model && !served_model.is_empty() {
+            format!("{} → {}", target_model, served_model)
+        } else {
+            served_model
+        };
+
+        Json(ChatResp {
+            status: "ok".into(),
+            model: display_model,
+            reply: final_content,
+            thinking: final_thinking,
+            duration_ms: start.elapsed().as_millis() as u64,
+            completed_task,
+        })
     } else {
         // --- Route: local Ollama ---
         let client = reqwest::Client::builder()
@@ -566,60 +747,114 @@ async fn handle_chat(
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        let res = client.post("http://127.0.0.1:11434/api/chat")
-            .json(&serde_json::json!({
+        let tool_definitions = tools::definitions_for_permissions(&perms);
+        let mut final_content = String::new();
+        let mut final_thinking = String::new();
+
+        // Multi-turn tool loop for Ollama (up to 5 steps)
+        for _step in 0..5 {
+            let mut req_body = serde_json::json!({
                 "model": target_model,
                 "messages": messages_payload,
-                "stream": false
-            }))
-            .send()
-            .await;
+                "stream": false,
+            });
+            if !tool_definitions.is_empty() {
+                req_body["tools"] = serde_json::to_value(&tool_definitions).unwrap_or_default();
+            }
 
-        match res {
-            Ok(resp) => {
-                if let Ok(body) = resp.json::<serde_json::Value>().await {
-                    let content = body.get("message")
-                        .and_then(|m| m.get("content"))
-                        .and_then(|c| c.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let thinking = body.get("message")
-                        .and_then(|m| m.get("thinking"))
-                        .and_then(|t| t.as_str())
-                        .unwrap_or("")
-                        .to_string();
-                    let _ = state.storage.add_message(conversation_id, "assistant", &content, &thinking);
-                    let completed_task = state.storage.complete_next_task(project_id).ok().flatten();
-                    Json(ChatResp {
-                        status: "ok".into(),
+            let res = client.post("http://127.0.0.1:11434/api/chat")
+                .json(&req_body)
+                .send()
+                .await;
+
+            match res {
+                Ok(resp) => {
+                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+                        let message_obj = body.get("message");
+                        let content = message_obj.and_then(|m| m.get("content")).and_then(|c| c.as_str()).unwrap_or("").to_string();
+                        let thinking = message_obj.and_then(|m| m.get("thinking")).and_then(|t| t.as_str()).unwrap_or("").to_string();
+                        if !content.is_empty() {
+                            final_content = content;
+                        }
+                        if !thinking.is_empty() {
+                            final_thinking = thinking;
+                        }
+
+                        let tool_calls = message_obj.and_then(|m| m.get("tool_calls")).and_then(|tc| tc.as_array()).cloned();
+                        if let Some(calls) = tool_calls {
+                            if !calls.is_empty() {
+                                messages_payload.push(message_obj.cloned().unwrap_or_else(|| serde_json::json!({
+                                    "role": "assistant",
+                                    "content": final_content,
+                                    "tool_calls": calls
+                                })));
+
+                                for call in calls {
+                                    let fn_obj = call.get("function");
+                                    let fn_name = fn_obj.and_then(|f| f.get("name")).and_then(|v| v.as_str()).unwrap_or("");
+                                    let fn_args = fn_obj.and_then(|f| f.get("arguments")).cloned().unwrap_or_else(|| serde_json::json!({}));
+
+                                    let exec_result = tools::execute_with_permissions(
+                                        fn_name,
+                                        &fn_args,
+                                        &workspace_path,
+                                        &skills,
+                                        &perms,
+                                    ).await;
+
+                                    let tool_output = match exec_result {
+                                        Ok(out) => out,
+                                        Err(err) => format!("Error executing {}: {}", fn_name, err),
+                                    };
+
+                                    messages_payload.push(serde_json::json!({
+                                        "role": "tool",
+                                        "name": fn_name,
+                                        "content": tool_output,
+                                    }));
+                                }
+                                continue;
+                            }
+                        }
+
+                        break;
+                    } else {
+                        return Json(ChatResp {
+                            status: "parse_error".into(),
+                            model: target_model,
+                            reply: "Failed to parse Ollama response".into(),
+                            thinking: String::new(),
+                            duration_ms: start.elapsed().as_millis() as u64,
+                            completed_task: None,
+                        });
+                    }
+                }
+                Err(err) => {
+                    return Json(ChatResp {
+                        status: "connection_error".into(),
                         model: target_model,
-                        reply: content,
-                        thinking,
-                        duration_ms: start.elapsed().as_millis() as u64,
-                        completed_task,
-                    })
-                } else {
-                    Json(ChatResp {
-                        status: "parse_error".into(),
-                        model: target_model,
-                        reply: "Failed to parse Ollama response".into(),
+                        reply: format!("Could not reach local Ollama on 127.0.0.1:11434: {err}"),
                         thinking: String::new(),
                         duration_ms: start.elapsed().as_millis() as u64,
                         completed_task: None,
-                    })
+                    });
                 }
             }
-            Err(err) => Json(ChatResp {
-                status: "connection_error".into(),
-                model: target_model,
-                reply: format!("Could not reach local Ollama on 127.0.0.1:11434: {err}"),
-                thinking: String::new(),
-                duration_ms: start.elapsed().as_millis() as u64,
-                completed_task: None,
-            }),
         }
+
+        let _ = state.storage.add_message(conversation_id, "assistant", &final_content, &final_thinking);
+        let completed_task = state.storage.complete_next_task(project_id).ok().flatten();
+        Json(ChatResp {
+            status: "ok".into(),
+            model: target_model,
+            reply: final_content,
+            thinking: final_thinking,
+            duration_ms: start.elapsed().as_millis() as u64,
+            completed_task,
+        })
     }
 }
+
 
 async fn get_credits(State(state): State<AppState>) -> Json<CreditsResp> {
     let or_key = state.storage.get_setting("openrouter_key")
@@ -716,8 +951,18 @@ async fn create_project(
     State(state): State<AppState>,
     Json(payload): Json<CreateProjectReq>,
 ) -> Json<serde_json::Value> {
-    let id = state.storage.add_project(&payload.name, &payload.path).unwrap_or(1);
-    Json(serde_json::json!({ "id": id, "name": payload.name, "path": payload.path }))
+    let id = state.storage.add_project(
+        &payload.name,
+        &payload.path,
+        payload.trust_level.as_deref(),
+        payload.permissions.as_ref(),
+    ).unwrap_or(1);
+    Json(serde_json::json!({
+        "id": id,
+        "name": payload.name,
+        "path": payload.path,
+        "trust_level": payload.trust_level.unwrap_or_else(|| "readwrite".to_string()),
+    }))
 }
 
 async fn update_project_path(
@@ -728,6 +973,59 @@ async fn update_project_path(
     let _ = state.storage.update_project_path(id, &payload.path);
     "Path updated"
 }
+
+async fn update_project_trust(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    Json(payload): Json<UpdateProjectTrustReq>,
+) -> &'static str {
+    let _ = state.storage.update_project_trust(id, &payload.trust_level, &payload.permissions);
+    "Trust updated"
+}
+
+async fn pick_folder_dialog() -> Json<PickFolderResp> {
+    let picked = tokio::task::spawn_blocking(|| {
+        #[cfg(windows)]
+        {
+            let script = r#"
+Add-Type -AssemblyName System.Windows.Forms
+$dialog = New-Object System.Windows.Forms.FolderBrowserDialog
+$dialog.Description = "Select Project Folder for DeskPilot"
+$dialog.ShowNewFolderButton = $true
+if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+    Write-Output $dialog.SelectedPath
+}
+"#;
+            let output = std::process::Command::new("powershell")
+                .args(["-NoProfile", "-NonInteractive", "-Command", script])
+                .output();
+
+            if let Ok(out) = output {
+                let stdout = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !stdout.is_empty() {
+                    let path = std::path::PathBuf::from(&stdout);
+                    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("project").to_string();
+                    return Some((stdout, name));
+                }
+            }
+        }
+        None
+    }).await.unwrap_or(None);
+
+    match picked {
+        Some((path, name)) => Json(PickFolderResp {
+            selected: true,
+            path,
+            name,
+        }),
+        None => Json(PickFolderResp {
+            selected: false,
+            path: String::new(),
+            name: String::new(),
+        }),
+    }
+}
+
 
 async fn get_conversations(
     State(state): State<AppState>,
