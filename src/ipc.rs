@@ -519,9 +519,20 @@ async fn handle_chat(
                     }
                     let _ = state.storage.add_message(conversation_id, "assistant", &content, "");
                     let completed_task = state.storage.complete_next_task(project_id).ok().flatten();
+                    // OpenRouter returns the actual model that served the request in body["model"]
+                    let served_model = body.get("model")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(&target_model)
+                        .to_string();
+                    // If routing changed the model, surface both (e.g. "deepseek/... → qwen/...")
+                    let display_model = if served_model != target_model && !served_model.is_empty() {
+                        format!("{} → {}", target_model, served_model)
+                    } else {
+                        served_model
+                    };
                     Json(ChatResp {
                         status: "ok".into(),
-                        model: target_model,
+                        model: display_model,
                         reply: content,
                         thinking: String::new(),
                         duration_ms: start.elapsed().as_millis() as u64,
