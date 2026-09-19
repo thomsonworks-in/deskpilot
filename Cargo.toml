@@ -1,8 +1,8 @@
 [package]
 name = "deskpilot"
-version = "0.1.3"
+version = "0.1.0"
 edition = "2021"
-description = "A private, ultra-fast, local-first desktop AI agent — headless daemon with Obsidian Velocity Web Studio"
+description = "A private, ultra-fast, local-first desktop agent and assistant built in Rust"
 license = "GPL-3.0-or-later"
 repository = "https://github.com/thomsonworks-in/deskpilot"
 readme = "README.md"
@@ -19,3 +19,9 @@ anyhow = "1"
 chrono = "0.4"
 rusqlite = { version = "0.32", features = ["bundled"] }
 single-instance = "0.3"
+tray-icon = "0.19"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_UI_WindowsAndMessaging",
+] }

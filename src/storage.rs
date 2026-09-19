@@ -9,6 +9,8 @@ use crate::message::{Message, Role};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskItem {
     pub id: u64,
+    #[serde(default)]
+    pub project_id: u64,
     pub title: String,
     pub done: bool,
 }
@@ -32,6 +34,8 @@ pub struct StoredLog {
 pub struct Project {
     pub id: u64,
     pub name: String,
+    #[serde(default)]
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,8 +100,17 @@ impl Storage {
              CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, level TEXT NOT NULL, message TEXT NOT NULL);"
         )?;
         
-        let _ = conn.execute("INSERT OR IGNORE INTO projects (id, name) VALUES (1, 'Default Project')", []);
-        let _ = conn.execute("INSERT OR IGNORE INTO conversations (id, project_id, title, updated_at) VALUES (1, 1, 'Main Chat', 0)", []);
+        let _ = conn.execute("ALTER TABLE projects ADD COLUMN path TEXT NOT NULL DEFAULT ''", []);
+        let _ = conn.execute("ALTER TABLE tasks ADD COLUMN project_id INTEGER NOT NULL DEFAULT 1", []);
+        let _ = conn.execute("INSERT OR IGNORE INTO projects (id, name, path) VALUES (1, 'deskpilot', 'D:\\Repos\\Deskpilot\\deskpilot')", []);
+        let _ = conn.execute("INSERT OR IGNORE INTO conversations (id, project_id, title, updated_at) VALUES (1, 1, 'PowerShell Install Script', 0)", []);
+
+        let task_count: i64 = conn.query_row("SELECT count(*) FROM tasks", [], |r| r.get(0)).unwrap_or(0);
+        if task_count == 0 {
+            let _ = conn.execute("INSERT INTO tasks (project_id, title, done) VALUES (1, 'Define project requirements & architectural boundaries', 0)", []);
+            let _ = conn.execute("INSERT INTO tasks (project_id, title, done) VALUES (1, 'Ask model to execute implementation steps', 0)", []);
+            let _ = conn.execute("INSERT INTO tasks (project_id, title, done) VALUES (1, 'LLM verifies changes and ticks off completed task items', 0)", []);
+        }
 
         let gotcha_count: i64 = conn.query_row("SELECT count(*) FROM gotchas", [], |r| r.get(0)).unwrap_or(0);
         if gotcha_count == 0 {
@@ -171,13 +184,14 @@ impl Storage {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
-        let mut statement = connection.prepare("SELECT id, title, done FROM tasks ORDER BY id")?;
+        let mut statement = connection.prepare("SELECT id, COALESCE(project_id, 1), title, done FROM tasks ORDER BY id")?;
         let tasks = statement
             .query_map([], |row| {
                 Ok(TaskItem {
                     id: row.get::<_, i64>(0)? as u64,
-                    title: row.get(1)?,
-                    done: row.get::<_, i64>(2)? != 0,
+                    project_id: row.get::<_, i64>(1)? as u64,
+                    title: row.get(2)?,
+                    done: row.get::<_, i64>(3)? != 0,
                 })
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -195,8 +209,8 @@ impl Storage {
             })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
-        let mut statement = connection.prepare("SELECT id, name FROM projects ORDER BY id")?;
-        let projects = statement.query_map([], |row| Ok(Project { id: row.get(0)?, name: row.get(1)? }))?.collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut statement = connection.prepare("SELECT id, name, COALESCE(path, '') FROM projects ORDER BY id")?;
+        let projects = statement.query_map([], |row| Ok(Project { id: row.get(0)?, name: row.get(1)?, path: row.get(2)? }))?.collect::<rusqlite::Result<Vec<_>>>()?;
 
         let mut statement = connection.prepare("SELECT id, project_id, title, updated_at FROM conversations ORDER BY updated_at DESC")?;
         let conversations = statement.query_map([], |row| Ok(Conversation {
@@ -490,6 +504,102 @@ impl Storage {
             params![conversation_id as i64, max_pos, role, content, thinking, now],
         )?;
         Ok(())
+    }
+
+    pub fn get_projects(&self) -> Result<Vec<Project>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT id, name, COALESCE(path, '') FROM projects ORDER BY id ASC")?;
+        let items = stmt.query_map([], |row| {
+            Ok(Project {
+                id: row.get::<_, i64>(0)? as u64,
+                name: row.get(1)?,
+                path: row.get(2)?,
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(items)
+    }
+
+    pub fn add_project(&self, name: &str, path: &str) -> Result<u64> {
+        let conn = self.connection()?;
+        conn.execute("INSERT INTO projects (name, path) VALUES (?1, ?2)", params![name, path])?;
+        let project_id = conn.last_insert_rowid() as u64;
+        let now = chrono::Utc::now().timestamp();
+        let _ = conn.execute("INSERT INTO conversations (project_id, title, updated_at) VALUES (?1, 'Main Chat', ?2)", params![project_id as i64, now]);
+        let _ = conn.execute("INSERT INTO tasks (project_id, title, done) VALUES (?1, 'Define project requirements & architectural boundaries', 0)", params![project_id as i64]);
+        let _ = conn.execute("INSERT INTO tasks (project_id, title, done) VALUES (?1, 'Ask model to execute implementation steps', 0)", params![project_id as i64]);
+        let _ = conn.execute("INSERT INTO tasks (project_id, title, done) VALUES (?1, 'LLM verifies changes and ticks off completed task items', 0)", params![project_id as i64]);
+        Ok(project_id)
+    }
+
+    pub fn update_project_path(&self, id: u64, path: &str) -> Result<()> {
+        let conn = self.connection()?;
+        conn.execute("UPDATE projects SET path = ?1 WHERE id = ?2", params![path, id as i64])?;
+        Ok(())
+    }
+
+    pub fn get_conversations(&self, project_id: u64) -> Result<Vec<Conversation>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT id, project_id, title, updated_at FROM conversations WHERE project_id = ?1 ORDER BY updated_at DESC, id DESC")?;
+        let items = stmt.query_map([project_id as i64], |row| {
+            Ok(Conversation {
+                id: row.get::<_, i64>(0)? as u64,
+                project_id: row.get::<_, i64>(1)? as u64,
+                title: row.get(2)?,
+                updated_at: row.get(3)?,
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(items)
+    }
+
+    pub fn add_conversation(&self, project_id: u64, title: &str) -> Result<u64> {
+        let conn = self.connection()?;
+        let now = chrono::Utc::now().timestamp();
+        conn.execute("INSERT INTO conversations (project_id, title, updated_at) VALUES (?1, ?2, ?3)", params![project_id as i64, title, now])?;
+        Ok(conn.last_insert_rowid() as u64)
+    }
+
+    pub fn get_tasks(&self, project_id: u64) -> Result<Vec<TaskItem>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT id, COALESCE(project_id, 1), title, done FROM tasks WHERE project_id = ?1 ORDER BY id ASC")?;
+        let items = stmt.query_map([project_id as i64], |row| {
+            Ok(TaskItem {
+                id: row.get::<_, i64>(0)? as u64,
+                project_id: row.get::<_, i64>(1)? as u64,
+                title: row.get(2)?,
+                done: row.get::<_, i64>(3)? != 0,
+            })
+        })?.collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(items)
+    }
+
+    pub fn add_task(&self, project_id: u64, title: &str, done: bool) -> Result<u64> {
+        let conn = self.connection()?;
+        conn.execute("INSERT INTO tasks (project_id, title, done) VALUES (?1, ?2, ?3)", params![project_id as i64, title, if done { 1 } else { 0 }])?;
+        Ok(conn.last_insert_rowid() as u64)
+    }
+
+    pub fn update_task_done(&self, id: u64, done: bool) -> Result<()> {
+        let conn = self.connection()?;
+        conn.execute("UPDATE tasks SET done = ?1 WHERE id = ?2", params![if done { 1 } else { 0 }, id as i64])?;
+        Ok(())
+    }
+
+    pub fn complete_next_task(&self, project_id: u64) -> Result<Option<TaskItem>> {
+        let conn = self.connection()?;
+        let mut stmt = conn.prepare("SELECT id, COALESCE(project_id, 1), title, done FROM tasks WHERE project_id = ?1 AND done = 0 ORDER BY id ASC LIMIT 1")?;
+        let next_item = stmt.query_row([project_id as i64], |row| {
+            Ok(TaskItem {
+                id: row.get::<_, i64>(0)? as u64,
+                project_id: row.get::<_, i64>(1)? as u64,
+                title: row.get(2)?,
+                done: false,
+            })
+        }).ok();
+
+        if let Some(ref item) = next_item {
+            let _ = conn.execute("UPDATE tasks SET done = 1 WHERE id = ?1", params![item.id as i64]);
+        }
+        Ok(next_item)
     }
 }
 

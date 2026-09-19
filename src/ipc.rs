@@ -31,6 +31,34 @@ pub struct ChatResp {
     pub reply: String,
     pub thinking: String,
     pub duration_ms: u64,
+    pub completed_task: Option<crate::storage::TaskItem>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateProjectReq {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProjectPathReq {
+    pub path: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateConversationReq {
+    pub title: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateTaskReq {
+    pub title: String,
+    pub done: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub struct ToggleTaskReq {
+    pub done: bool,
 }
 
 #[derive(Serialize)]
@@ -123,6 +151,11 @@ pub async fn start_server(storage: Arc<Storage>) {
         .route("/api/chat", post(handle_chat))
         .route("/api/message", post(handle_message))
         .route("/api/messages/:conversation_id", get(get_messages))
+        .route("/api/projects", get(get_projects).post(create_project))
+        .route("/api/projects/:id/path", post(update_project_path))
+        .route("/api/projects/:id/conversations", get(get_conversations).post(create_conversation))
+        .route("/api/projects/:id/tasks", get(get_tasks).post(create_task))
+        .route("/api/tasks/:id/toggle", post(toggle_task))
         .route("/api/chat/test-local", post(test_local_chat))
         .route("/api/chat/optimise", post(optimise_chat))
         .route("/api/gotchas/:project_id", get(get_gotchas).post(create_gotcha))
@@ -340,12 +373,15 @@ async fn handle_chat(
                     &thinking,
                 );
 
+                let completed_task = state.storage.complete_next_task(project_id).ok().flatten();
+
                 Json(ChatResp {
                     status: "ok".into(),
                     model: target_model,
                     reply: content,
                     thinking,
                     duration_ms: start.elapsed().as_millis() as u64,
+                    completed_task,
                 })
             } else {
                 Json(ChatResp {
@@ -354,6 +390,7 @@ async fn handle_chat(
                     reply: "Failed to parse JSON response from local Ollama".into(),
                     thinking: String::new(),
                     duration_ms: start.elapsed().as_millis() as u64,
+                    completed_task: None,
                 })
             }
         }
@@ -364,9 +401,75 @@ async fn handle_chat(
                 reply: format!("Could not reach local Ollama on 127.0.0.1:11434: {err}"),
                 thinking: String::new(),
                 duration_ms: start.elapsed().as_millis() as u64,
+                completed_task: None,
             })
         }
     }
+}
+
+async fn get_projects(State(state): State<AppState>) -> Json<Vec<crate::storage::Project>> {
+    let list = state.storage.get_projects().unwrap_or_default();
+    Json(list)
+}
+
+async fn create_project(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateProjectReq>,
+) -> Json<serde_json::Value> {
+    let id = state.storage.add_project(&payload.name, &payload.path).unwrap_or(1);
+    Json(serde_json::json!({ "id": id, "name": payload.name, "path": payload.path }))
+}
+
+async fn update_project_path(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    Json(payload): Json<UpdateProjectPathReq>,
+) -> &'static str {
+    let _ = state.storage.update_project_path(id, &payload.path);
+    "Path updated"
+}
+
+async fn get_conversations(
+    State(state): State<AppState>,
+    Path(project_id): Path<u64>,
+) -> Json<Vec<crate::storage::Conversation>> {
+    let list = state.storage.get_conversations(project_id).unwrap_or_default();
+    Json(list)
+}
+
+async fn create_conversation(
+    State(state): State<AppState>,
+    Path(project_id): Path<u64>,
+    Json(payload): Json<CreateConversationReq>,
+) -> Json<serde_json::Value> {
+    let id = state.storage.add_conversation(project_id, &payload.title).unwrap_or(1);
+    Json(serde_json::json!({ "id": id, "project_id": project_id, "title": payload.title }))
+}
+
+async fn get_tasks(
+    State(state): State<AppState>,
+    Path(project_id): Path<u64>,
+) -> Json<Vec<crate::storage::TaskItem>> {
+    let list = state.storage.get_tasks(project_id).unwrap_or_default();
+    Json(list)
+}
+
+async fn create_task(
+    State(state): State<AppState>,
+    Path(project_id): Path<u64>,
+    Json(payload): Json<CreateTaskReq>,
+) -> Json<serde_json::Value> {
+    let id = state.storage.add_task(project_id, &payload.title, payload.done.unwrap_or(false)).unwrap_or(0);
+    Json(serde_json::json!({ "id": id, "title": payload.title, "done": payload.done.unwrap_or(false) }))
+}
+
+async fn toggle_task(
+    State(state): State<AppState>,
+    Path(id): Path<u64>,
+    Json(payload): Json<ToggleTaskReq>,
+) -> &'static str {
+    let _ = state.storage.update_task_done(id, payload.done);
+    "Task updated"
 }
 
 async fn get_providers(

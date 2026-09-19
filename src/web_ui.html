@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DeskPilot Studio • ThomsonWorks Obsidian Velocity</title>
+    <title>DeskPilot Studio â€¢ ThomsonWorks Obsidian Velocity</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
@@ -49,12 +49,15 @@
             background: linear-gradient(135deg, #7c3aed, #5b21b6);
             box-shadow: 0 4px 16px rgba(109, 40, 217, 0.25);
         }
-        .badge-pill {
-            transition: all 0.15s ease;
+        .todo-done {
+            text-decoration: line-through;
+            opacity: 0.5;
+            color: #94a3b8;
         }
-        .badge-pill:hover {
-            border-color: rgba(170, 59, 255, 0.4);
-            background: rgba(22, 19, 34, 0.9);
+        .todo-pending {
+            text-decoration: none;
+            opacity: 1;
+            color: #e2e8f0;
         }
         .doc-prose p { margin-bottom: 0.75rem; line-height: 1.65; }
         .doc-prose code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
@@ -64,10 +67,9 @@
 
     <!-- 1. GLOBAL TOP COMMAND BAR -->
     <header class="flex items-center justify-between px-3 md:px-4 py-2 bg-[#0f0d17] border-b border-[#1f1b2b] z-30 h-12 flex-shrink-0 gap-2">
-        <!-- Left: Logo & Breadcrumbs -->
+        <!-- Left: Logo & Active Workspace Context -->
         <div class="flex items-center space-x-2.5 flex-shrink-0">
             <div class="w-6 h-6 flex items-center justify-center flex-shrink-0">
-                <!-- ThomsonWorks Official Vector Emblem -->
                 <svg viewBox="0 0 48 46" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full drop-shadow">
                     <path d="M25.946 44.938c-.664.845-2.021.375-2.021-.698V33.937a2.26 2.26 0 0 0-2.262-2.262H10.287c-.92 0-1.456-1.04-.92-1.788l7.48-10.471c1.07-1.497 0-3.578-1.842-3.578H1.237c-.92 0-1.456-1.04-.92-1.788L10.013.474c.214-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.471c-1.07 1.498 0 3.579 1.842 3.579h11.377c.943 0 1.473 1.088.89 1.83L25.947 44.94z" fill="#7c3aed"/>
                     <path d="M10.287 31.675h13.376V44.24l19.535-27.355H31.82c-1.842 0-2.912-2.081-1.842-3.579L37.458 2.835H10.933l-8.696 12.18h15.228c1.842 0 2.912 2.081 1.842 3.578l-7.48 10.471c-.536.748 0 1.788.92 1.788z" fill="#a78bfa" opacity="0.85"/>
@@ -84,28 +86,26 @@
             <div class="h-3.5 w-px bg-[#262135]"></div>
 
             <!-- Workspace Context Switcher -->
-            <div class="flex items-center space-x-1.5 bg-[#151221] border border-[#272238] rounded-md px-2 py-0.5 text-xs text-slate-300 hover:border-purple-600/60 transition cursor-pointer">
-                <i class="fa-solid fa-folder-closed text-purple-400 text-[10px]"></i>
-                <select id="project-select" onchange="switchProject(this.value)" class="bg-transparent border-none focus:outline-none text-[11px] text-slate-200 cursor-pointer pr-1">
-                    <option value="1">Control</option>
-                    <option value="2">DeskPilot</option>
-                </select>
+            <div class="flex items-center space-x-1.5 bg-[#151221] border border-[#272238] rounded-md px-2 py-0.5 text-xs text-slate-300 hover:border-purple-600/60 transition cursor-pointer" onclick="openNewProjectModal()" title="Active project workspace">
+                <i class="fa-solid fa-folder text-purple-400 text-[10px]"></i>
+                <span id="active-project-name" class="text-[11px] text-slate-200 font-medium">deskpilot</span>
+                <span id="active-project-path-tag" class="text-[9px] text-slate-400 font-mono hidden md:inline truncate max-w-[140px]">D:\Repos\Deskpilot</span>
             </div>
         </div>
 
         <!-- Center: Quick View Mode Pills -->
-        <div class="hidden md:flex items-center bg-[#13101c] border border-[#241f33] rounded-lg p-0.5 text-[11px]">
+        <div class="flex items-center bg-[#13101c] border border-[#241f33] rounded-lg p-0.5 text-[11px]">
             <button onclick="setCanvasMode('chat')" id="mode-btn-chat" class="px-2.5 py-1 rounded-md text-white font-medium bg-[#241f33] transition flex items-center gap-1.5">
                 <i class="fa-solid fa-bolt-lightning text-purple-300 text-[10px]"></i>
                 <span>Agent Studio</span>
             </button>
             <button onclick="setCanvasMode('spec')" id="mode-btn-spec" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition flex items-center gap-1.5">
                 <i class="fa-solid fa-compass-drafting text-[10px]"></i>
-                <span>Living Spec & DAG</span>
+                <span>Living Spec & Todos</span>
             </button>
         </div>
 
-        <!-- Right: Telemetry & Actions -->
+        <!-- Right: Telemetry, Model & Settings -->
         <div class="flex items-center space-x-2 text-xs flex-shrink-0">
             <div class="hidden lg:flex items-center space-x-1.5 text-slate-400 font-mono text-[11px]">
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500/80 animate-pulse"></span>
@@ -119,6 +119,11 @@
                 </select>
             </div>
 
+            <!-- Settings Button -->
+            <button onclick="openSettingsModal()" class="p-1.5 rounded-md hover:bg-[#1a1626] text-slate-400 hover:text-white transition" title="Open Settings (Providers, Triggers, MCP, Vault)">
+                <i class="fa-solid fa-gear text-xs"></i>
+            </button>
+
             <!-- Inspector Toggle Button -->
             <button onclick="toggleInspector()" class="p-1.5 rounded-md hover:bg-[#1a1626] text-slate-400 hover:text-white transition" title="Toggle Context Inspector (Ctrl+B)">
                 <i class="fa-solid fa-sidebar text-xs"></i>
@@ -129,73 +134,59 @@
     <!-- 2. MAIN APP SHELL (3 COLUMNS) -->
     <div class="flex-1 flex overflow-hidden">
         
-        <!-- LEFT SIDEBAR: NAVIGATION & WORKSPACES TREE -->
-        <aside class="w-60 bg-[#0f0d17] border-r border-[#1f1b2b] flex flex-col justify-between p-3 select-none flex-shrink-0">
-            <div class="space-y-4">
-                <!-- Primary Action Button -->
-                <button onclick="newSession()" class="btn-brand w-full py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-center space-x-2 shadow-sm">
-                    <i class="fa-solid fa-plus text-[10px]"></i>
-                    <span>New Agent Thread</span>
+        <!-- LEFT SIDEBAR: MATCHING USER SCREENSHOT -->
+        <aside class="w-64 bg-[#0f0d17] border-r border-[#1f1b2b] flex flex-col justify-between p-3 select-none flex-shrink-0">
+            <div class="space-y-3 overflow-y-auto">
+                <!-- + New Conversation Button -->
+                <button onclick="newConversation()" class="w-full py-2 px-3 rounded-lg text-xs font-semibold flex items-center justify-start space-x-2 text-slate-200 bg-[#161224] hover:bg-[#1f1833] border border-[#2b2240] hover:border-purple-600/60 transition shadow-sm">
+                    <i class="fa-solid fa-plus text-[#a78bfa] text-xs"></i>
+                    <span>New Conversation</span>
                 </button>
 
-                <!-- Core Navigation -->
-                <nav class="space-y-0.5 text-xs font-medium text-slate-300">
-                    <button onclick="switchNav('chat')" id="nav-chat" class="active-tab w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item">
-                        <i class="fa-solid fa-terminal w-4 text-center text-xs text-[#c084fc]"></i>
-                        <span>Live Agent Studio</span>
+                <!-- Navigation List -->
+                <div class="space-y-0.5 text-xs font-medium text-slate-300">
+                    <button onclick="toggleConversationHistory()" class="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item text-slate-300">
+                        <i class="fa-solid fa-clock-rotate-left w-4 text-center text-xs text-slate-400"></i>
+                        <span>Conversation History</span>
                     </button>
-                    <button onclick="switchNav('providers')" id="nav-providers" class="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item text-slate-400">
-                        <i class="fa-solid fa-server w-4 text-center text-xs text-sky-400"></i>
-                        <span>AI Providers & Keys</span>
+                    <button onclick="openSettingsTab('triggers')" class="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item text-slate-300">
+                        <i class="fa-regular fa-clock w-4 text-center text-xs text-slate-400"></i>
+                        <span>Scheduled Tasks</span>
                     </button>
-                    <button onclick="switchNav('triggers')" id="nav-triggers" class="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item text-slate-400">
-                        <i class="fa-solid fa-clock-rotate-left w-4 text-center text-xs text-amber-400"></i>
-                        <span>Triggers & Automation</span>
-                    </button>
-                    <button onclick="switchNav('mcp')" id="nav-mcp" class="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item text-slate-400">
-                        <i class="fa-solid fa-cubes w-4 text-center text-xs text-purple-400"></i>
-                        <span>MCP Plugins & Skills</span>
-                    </button>
-                    <button onclick="switchNav('settings')" id="nav-settings" class="w-full flex items-center space-x-2.5 px-2.5 py-1.5 rounded-md text-left nav-item text-slate-400">
-                        <i class="fa-solid fa-sliders w-4 text-center text-xs text-sky-400"></i>
-                        <span>Engine Vault & Keys</span>
-                    </button>
-                </nav>
+                </div>
 
-                <!-- Workspaces Tree (Antigravity/ChatGPT style) -->
+                <!-- Projects Tree Section -->
                 <div class="border-t border-[#1f1b2b] pt-3">
                     <div class="flex items-center justify-between px-1 mb-2">
-                        <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Projects & Threads</span>
+                        <div class="flex items-center space-x-1.5 cursor-pointer text-slate-400 hover:text-slate-200">
+                            <span class="text-xs font-semibold">Projects</span>
+                            <i class="fa-solid fa-chevron-down text-[9px]"></i>
+                        </div>
+                        <div class="flex items-center space-x-1">
+                            <!-- Create New Project Button & Dropdown Trigger -->
+                            <div class="relative">
+                                <button onclick="toggleProjectMenu()" id="btn-add-project" class="p-1 rounded hover:bg-[#1e192f] text-slate-400 hover:text-white transition" title="Create New Project">
+                                    <i class="fa-solid fa-folder-plus text-xs"></i>
+                                </button>
+                                
+                                <!-- New Project Context Dropdown -->
+                                <div id="project-menu-popup" class="hidden absolute right-0 top-7 z-40 w-40 py-1 bg-[#141120] border border-[#2d2242] rounded-xl shadow-2xl text-xs font-sans">
+                                    <div onclick="openNewProjectModal()" class="px-3 py-2 hover:bg-[#201833] cursor-pointer flex items-center space-x-2 text-slate-200">
+                                        <i class="fa-solid fa-folder-plus text-purple-400 text-xs"></i>
+                                        <span>New Project</span>
+                                    </div>
+                                    <div onclick="openQuickStartProject()" class="px-3 py-2 hover:bg-[#201833] cursor-pointer flex items-center space-x-2 text-slate-200 border-t border-[#1f1b2b]">
+                                        <i class="fa-solid fa-bolt text-amber-400 text-xs"></i>
+                                        <span>Quick Start</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <div class="space-y-2 overflow-y-auto max-h-64 pr-1 text-xs">
-                        <!-- Project 1: Control -->
-                        <div>
-                            <div class="flex items-center space-x-1.5 text-slate-300 font-semibold px-1 py-1 hover:text-white cursor-pointer">
-                                <i class="fa-solid fa-chevron-down text-[8px] text-slate-400"></i>
-                                <i class="fa-solid fa-folder text-[#aa3bff] text-[11px]"></i>
-                                <span class="truncate">Control</span>
-                            </div>
-                            <div class="pl-4 space-y-0.5 border-l border-[#201c2e] ml-2 mt-1">
-                                <div class="px-2 py-1 rounded bg-[#181426] border border-[#2b2440] text-slate-200 text-[11px] flex items-center justify-between cursor-pointer">
-                                    <span class="truncate">#42 • Obsidian UI Refactor</span>
-                                    <span class="text-[9px] text-emerald-400 font-mono">Active</span>
-                                </div>
-                                <div class="px-2 py-1 rounded text-slate-400 hover:bg-[#141120] text-[11px] flex items-center justify-between cursor-pointer">
-                                    <span class="truncate">#41 • Dual-Engine Symbiosis</span>
-                                    <span class="text-[9px] text-slate-400 font-mono">2h ago</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- Project 2: DeskPilot -->
-                        <div>
-                            <div class="flex items-center space-x-1.5 text-slate-400 hover:text-white px-1 py-1 cursor-pointer">
-                                <i class="fa-solid fa-chevron-right text-[8px] text-slate-400"></i>
-                                <i class="fa-solid fa-folder text-slate-400 text-[11px]"></i>
-                                <span class="truncate">DeskPilot</span>
-                            </div>
-                        </div>
+                    <!-- Dynamic Projects & Threads Container -->
+                    <div id="projects-tree" class="space-y-2 pr-1 text-xs max-h-72 overflow-y-auto">
+                        <!-- Loaded dynamically via loadProjects() -->
                     </div>
                 </div>
             </div>
@@ -215,7 +206,9 @@
                         <div class="w-5 h-5 rounded-full bg-gradient-to-tr from-[#aa3bff] to-[#c084fc] flex items-center justify-center text-[10px] text-white font-bold">J</div>
                         <span class="text-slate-300 text-[11px]">ThomsonWorks</span>
                     </div>
-                    <button onclick="switchNav('settings')" class="hover:text-white"><i class="fa-solid fa-gear text-xs"></i></button>
+                    <button onclick="openSettingsModal()" class="hover:text-white" title="Engine Vault & Settings">
+                        <i class="fa-solid fa-gear text-xs"></i>
+                    </button>
                 </div>
             </div>
         </aside>
@@ -223,108 +216,74 @@
         <!-- CENTER WORKSPACE CANVAS -->
         <main class="flex-1 flex flex-col justify-between bg-[#08060d] relative overflow-hidden">
 
-            <!-- VIEW 1: AGENT STUDIO (CHAT & EXECUTION FEED) -->
+            <!-- VIEW 1: AGENT STUDIO (CHAT FEED WITH CLEAN INSTRUCTIONAL DATA) -->
             <div id="canvas-chat" class="flex-1 flex flex-col justify-between h-full overflow-hidden">
                 
                 <!-- Conversation Stream -->
                 <div id="messages" class="flex-1 overflow-y-auto px-6 py-4 space-y-4 max-w-4xl mx-auto w-full pb-36">
                     
-                    <!-- Agent Welcome Header -->
-                    <div class="py-2 border-b border-[#1b1726] flex items-center justify-between">
-                        <div>
-                            <h2 class="text-sm font-bold text-white flex items-center gap-2">
-                                <span class="text-[#c084fc]">⚡</span> DeskPilot Autonomous Studio
-                            </h2>
-                            <p class="text-[11px] text-slate-400">Spec-driven, dual-engine cognitive workspace. Zero Electron bloat.</p>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-950/80 text-purple-300 border border-purple-800/60">O(1) Memory</span>
-                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-950/80 text-emerald-300 border border-emerald-800/60">Git Checkpointing</span>
-                        </div>
-                    </div>
-
-                    <!-- Example User Message (Sleek Pill) -->
-                    <div class="flex justify-end">
-                        <div class="bg-[#181426] border border-[#2b2440] text-purple-100 px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-2xl text-xs leading-relaxed shadow-sm">
-                            Refactor the Web Studio UI to implement the "Obsidian Velocity" design system, incorporating collapsible micro-execution pills, docked background processes, and slash commands.
-                        </div>
-                    </div>
-
-                    <!-- Collapsible Micro-Execution Accordion #1: Reasoning Stream -->
-                    <div class="border border-[#2d2242] bg-[#120e1e]/60 rounded-xl overflow-hidden text-xs">
-                        <div class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-[#191429] transition" onclick="toggleElement('thought-block-1')">
-                            <div class="flex items-center space-x-2 text-amber-300 font-medium">
-                                <i class="fa-solid fa-lightbulb text-amber-400 text-xs"></i>
-                                <span>Thought for 8s • DeepSeek-R1 / Claude 3.7</span>
+                    <!-- Instructional Clean Welcome State -->
+                    <div id="welcome-empty-state" class="py-6 space-y-6">
+                        <div class="text-center space-y-2 max-w-lg mx-auto pt-6">
+                            <div class="w-12 h-12 mx-auto rounded-2xl bg-purple-950/50 border border-purple-800/60 flex items-center justify-center text-[#c084fc] text-xl shadow-lg">
+                                <i class="fa-solid fa-bolt-lightning"></i>
                             </div>
-                            <span class="text-[10px] text-slate-400 font-mono flex items-center gap-1">
-                                <span>18 tok/s</span>
-                                <i class="fa-solid fa-chevron-down text-[8px]"></i>
-                            </span>
+                            <h2 class="text-base font-bold text-white tracking-wide">DeskPilot Autonomous Studio</h2>
+                            <p class="text-xs text-slate-400 leading-relaxed">
+                                Private, local-first desktop agent powered by Ollama and cloud frontier models.
+                                Dual-engine reasoning with automated living spec execution.
+                            </p>
                         </div>
-                        <div id="thought-block-1" class="hidden px-3.5 py-2.5 bg-black/40 border-t border-[#231b33] text-slate-300 font-mono text-[11px] leading-relaxed">
-                            1. Analyzed user request: requested senior UI overhaul inspired by ChatGPT simplicity and Antigravity density.<br>
-                            2. Decoupled layout into 3 columns: Left Workspaces Rail, Center Canvas with Mode Toggle, Right Context Inspector.<br>
-                            3. Implemented floating Glass Cockpit with docked task indicator and slash command popover.
-                        </div>
-                    </div>
 
-                    <!-- Collapsible Micro-Execution Accordion #2: Tool Activity -->
-                    <div class="border border-[#1f1b2b] bg-[#100d1a] rounded-xl overflow-hidden text-xs">
-                        <div class="flex items-center justify-between px-3 py-2 cursor-pointer hover:bg-[#181426] transition" onclick="toggleElement('diff-block-1')">
-                            <div class="flex items-center space-x-2 text-sky-400 font-mono">
-                                <i class="fa-solid fa-code-merge text-xs"></i>
-                                <span>replace_file_content (src/web_ui.html)</span>
+                        <!-- Example Quick-Instruction Cards -->
+                        <div class="space-y-2.5 max-w-xl mx-auto">
+                            <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-1">
+                                <i class="fa-solid fa-lightbulb text-amber-400 mr-1"></i> Example Instructions to get started:
                             </div>
-                            <div class="flex items-center space-x-2">
-                                <span class="text-[10px] text-emerald-400 font-mono">Success (11ms)</span>
-                                <i class="fa-solid fa-chevron-down text-[8px] text-slate-400"></i>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <div onclick="useExamplePrompt('Inspect repository structure and explain the architecture')" class="p-3 rounded-xl bg-[#120f1e] border border-[#231b34] hover:border-purple-600/60 hover:bg-[#181329] cursor-pointer transition space-y-1">
+                                    <div class="text-xs font-semibold text-purple-300 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-diagram-project text-[10px]"></i>
+                                        <span>Analyze Architecture</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-400">Scan codebase AST & explain project structure</p>
+                                </div>
+                                <div onclick="useExamplePrompt('Find potential bugs, test gaps and suggest improvements')" class="p-3 rounded-xl bg-[#120f1e] border border-[#231b34] hover:border-purple-600/60 hover:bg-[#181329] cursor-pointer transition space-y-1">
+                                    <div class="text-xs font-semibold text-sky-300 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-bug-slash text-[10px]"></i>
+                                        <span>Find Defect Risks</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-400">Identify unhandled edge cases & test regressions</p>
+                                </div>
+                                <div onclick="useExamplePrompt('Generate execution living spec and todo checklist for new feature')" class="p-3 rounded-xl bg-[#120f1e] border border-[#231b34] hover:border-purple-600/60 hover:bg-[#181329] cursor-pointer transition space-y-1">
+                                    <div class="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-list-check text-[10px]"></i>
+                                        <span>Generate Living Spec</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-400">Draft verification gates & execution todos</p>
+                                </div>
+                                <div onclick="useExamplePrompt('Create unit tests with verification gates')" class="p-3 rounded-xl bg-[#120f1e] border border-[#231b34] hover:border-purple-600/60 hover:bg-[#181329] cursor-pointer transition space-y-1">
+                                    <div class="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-vial-circle-check text-[10px]"></i>
+                                        <span>Automated Test Gates</span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-400">Implement surgical tests with self-healing</p>
+                                </div>
                             </div>
                         </div>
-                        <div id="diff-block-1" class="hidden p-3 bg-black/50 border-t border-[#1f1b2b] font-mono text-[11px] text-slate-300 overflow-x-auto">
-                            <div class="text-rose-400">- old: static blocky cards with hard-coded borders</div>
-                            <div class="text-emerald-400">+ new: document-style typography with floating glass cockpit composer</div>
-                        </div>
-                    </div>
-
-                    <!-- Antigravity-Grade Git Checkpoint Pill -->
-                    <div class="flex items-center justify-between px-3 py-2 rounded-xl bg-[#141120] border border-[#27203b] text-xs">
-                        <div class="flex items-center space-x-2 text-slate-300">
-                            <i class="fa-solid fa-code-branch text-[#c084fc] text-xs"></i>
-                            <span class="font-medium">Git Checkpoint Saved</span>
-                            <span class="text-[10px] font-mono text-emerald-400">+445 -428 lines</span>
-                        </div>
-                        <button onclick="triggerRollback()" class="px-2.5 py-1 rounded bg-[#201a33] hover:bg-[#2b2344] text-[#c084fc] hover:text-white font-mono text-[10px] transition">
-                            Revert Checkpoint
-                        </button>
-                    </div>
-
-                    <!-- Assistant Document Response -->
-                    <div class="doc-prose text-xs text-slate-200 leading-relaxed pr-2">
-                        <p>The <strong>Obsidian Velocity</strong> UI refactor is deployed. DeskPilot now incorporates:</p>
-                        <ul class="list-disc pl-5 space-y-1 text-slate-300">
-                            <li><strong>Floating Glass Cockpit</strong>: Centered, blur-filtered composer with docked background task monitors.</li>
-                            <li><strong>Dual-Mode Canvas</strong>: Toggle seamlessly between live chat streaming and living spec DAGs.</li>
-                            <li><strong>Slash Commands</strong>: Type <code class="bg-[#181426] px-1 py-0.5 rounded text-purple-300">/</code> to access <code class="text-purple-300">/spec</code>, <code class="text-purple-300">/diff</code>, <code class="text-purple-300">/rollback</code>, and <code class="text-purple-300">/test</code>.</li>
-                            <li><strong>Collapsible Micro-Badges</strong>: Uncluttered conversation flow with accordion reasoning and tool cards.</li>
-                        </ul>
                     </div>
                 </div>
 
-                <!-- 3. FLOATING GLASS COCKPIT COMPOSER DOCK (ChatGPT + Antigravity Hybrid) -->
+                <!-- 3. FLOATING GLASS COCKPIT COMPOSER DOCK -->
                 <div class="absolute bottom-4 left-0 right-0 max-w-3xl mx-auto px-4 z-20">
                     
-                    <!-- Docked Background Tasks Shelf (Antigravity Style) -->
-                    <div id="running-tasks-shelf" class="flex items-center justify-between px-3.5 py-1.5 bg-[#141021]/95 border-t border-l border-r border-[#2c2242] rounded-t-xl text-xs backdrop-blur-md">
-                        <div class="flex items-center space-x-2 text-[#c084fc] font-mono text-[11px] truncate">
-                            <span class="animate-spin flex-shrink-0">⚙</span>
-                            <span class="font-semibold text-slate-200 flex-shrink-0">cargo test --watch</span>
-                            <span class="text-slate-400 text-[10px] hidden sm:inline truncate">(Listening in src/**/*.rs)</span>
+                    <!-- Task Completion Alert Banner (Animated) -->
+                    <div id="task-completed-banner" class="hidden mb-2 px-3.5 py-1.5 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-300 text-xs font-mono flex items-center justify-between backdrop-blur-md">
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-circle-check text-emerald-400"></i>
+                            <span id="task-completed-title">Task completed & ticked off!</span>
                         </div>
-                        <div class="flex items-center space-x-2 flex-shrink-0">
-                            <span class="text-[10px] text-emerald-400 font-mono hidden xs:inline">Running</span>
-                            <button onclick="dismissTaskShelf()" class="text-rose-400 hover:text-rose-300 text-[10px] font-mono ml-2">[Stop]</button>
-                        </div>
+                        <span class="text-[10px] text-emerald-400/80">Living Spec updated</span>
                     </div>
 
                     <!-- Slash Commands Autocomplete Popover -->
@@ -340,10 +299,6 @@
                         <div onclick="applySlash('/rollback')" class="px-2.5 py-1.5 rounded-lg hover:bg-[#201833] cursor-pointer flex items-center justify-between text-slate-200">
                             <span class="text-amber-400 font-bold">/rollback</span>
                             <span class="text-[10px] text-slate-400">Revert workspace to clean git checkpoint</span>
-                        </div>
-                        <div onclick="applySlash('/repo_map')" class="px-2.5 py-1.5 rounded-lg hover:bg-[#1e192f] cursor-pointer flex items-center justify-between text-slate-200">
-                            <span class="text-emerald-400/90 font-bold">/repo_map</span>
-                            <span class="text-[10px] text-slate-400">Summarize AST workspace structure</span>
                         </div>
                         <div onclick="applySlash('/optimise')" class="px-2.5 py-1.5 rounded-lg hover:bg-[#1e192f] cursor-pointer flex items-center justify-between text-slate-200">
                             <span class="text-purple-300 font-bold">/optimise</span>
@@ -389,249 +344,64 @@
                 </div>
             </div>
 
-            <!-- VIEW 2: LIVING SPEC & DAG CANVAS -->
-            <div id="canvas-spec" class="hidden flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full space-y-6">
+            <!-- VIEW 2: LIVING SPEC & VERIFICATION DAG / TODOS -->
+            <div id="canvas-spec" class="hidden flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full space-y-6 pb-24">
                 <div class="border-b border-[#201a30] pb-4 flex items-center justify-between">
                     <div>
                         <h2 class="text-base font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-compass-drafting text-[#c084fc]"></i> Living Spec & Verification DAG
+                            <i class="fa-solid fa-compass-drafting text-[#c084fc]"></i> Living Spec & Todo Checklist
                         </h2>
-                        <p class="text-xs text-slate-400">Spec-driven development pipeline. Eliminates vibe coding through verified execution gates.</p>
+                        <p class="text-xs text-slate-400">Spec-driven verification matrix. Items are ticked and struck off automatically when completed by the model.</p>
                     </div>
-                    <span class="px-2.5 py-1 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-800 text-[10px] font-mono">Pipeline Passing</span>
+                    <span id="spec-status-pill" class="px-2.5 py-1 rounded bg-purple-950/80 text-purple-300 border border-purple-800 text-[10px] font-mono">Live Matrix</span>
                 </div>
 
                 <!-- Visual Execution DAG -->
                 <div class="p-5 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-4">
-                    <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Execution Pipeline</h3>
-                    <div class="flex items-center space-x-3 text-xs font-mono">
-                        <div class="p-3 rounded-lg bg-purple-950/50 border border-purple-800 text-[#c084fc] flex items-center gap-2">
+                    <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Autonomous Execution Pipeline</h3>
+                    <div class="flex items-center space-x-3 text-xs font-mono overflow-x-auto pb-1">
+                        <div class="p-3 rounded-lg bg-purple-950/50 border border-purple-800 text-[#c084fc] flex items-center gap-2 flex-shrink-0">
                             <i class="fa-solid fa-check text-emerald-400"></i>
                             <span>1. Spec & Goals</span>
                         </div>
-                        <i class="fa-solid fa-arrow-right text-slate-600 text-xs"></i>
-                        <div class="p-3 rounded-lg bg-purple-950/50 border border-purple-800 text-[#c084fc] flex items-center gap-2">
+                        <i class="fa-solid fa-arrow-right text-slate-600 text-xs flex-shrink-0"></i>
+                        <div class="p-3 rounded-lg bg-purple-950/50 border border-purple-800 text-[#c084fc] flex items-center gap-2 flex-shrink-0">
                             <i class="fa-solid fa-check text-emerald-400"></i>
                             <span>2. AST Impact</span>
                         </div>
-                        <i class="fa-solid fa-arrow-right text-slate-600 text-xs"></i>
-                        <div class="p-3 rounded-lg bg-purple-950/50 border border-[#aa3bff] text-white shadow-lg flex items-center gap-2">
-                            <span class="animate-pulse text-[#aa3bff]">●</span>
-                            <span>3. Surgical Diffs</span>
+                        <i class="fa-solid fa-arrow-right text-slate-600 text-xs flex-shrink-0"></i>
+                        <div class="p-3 rounded-lg bg-purple-950/50 border border-[#aa3bff] text-white shadow-lg flex items-center gap-2 flex-shrink-0">
+                            <span class="animate-pulse text-[#aa3bff]">â—</span>
+                            <span>3. Execution & Ticking</span>
                         </div>
-                        <i class="fa-solid fa-arrow-right text-slate-600 text-xs"></i>
-                        <div class="p-3 rounded-lg bg-[#181426] border border-[#2b2240] text-slate-400 flex items-center gap-2">
-                            <span>4. Test Gates</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Living Checklist Requirements -->
-                <div class="p-5 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-3">
-                    <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Specification Matrix</h3>
-                    <div class="space-y-2 text-xs">
-                        <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-[#181426] cursor-pointer">
-                            <input type="checkbox" checked class="accent-purple-500 rounded" />
-                            <span class="text-slate-200 line-through">Extract ThomsonWorks vector brand asset from dashboard/dist/favicon.svg</span>
-                        </label>
-                        <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-[#181426] cursor-pointer">
-                            <input type="checkbox" checked class="accent-purple-500 rounded" />
-                            <span class="text-slate-200 line-through">Implement 3-column layout with collapsible micro-execution pills</span>
-                        </label>
-                        <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-[#181426] cursor-pointer">
-                            <input type="checkbox" checked class="accent-purple-500 rounded" />
-                            <span class="text-slate-200 line-through">Attach docked running tasks shelf above floating Glass Cockpit composer</span>
-                        </label>
-                        <label class="flex items-center space-x-2.5 p-2 rounded hover:bg-[#181426] cursor-pointer">
-                            <input type="checkbox" class="accent-purple-500 rounded" />
-                            <span class="text-slate-200">Verify unit test suites with cargo test and browser Puppeteer visual check</span>
-                        </label>
-                    </div>
-                </div>
-            </div>
-
-            <!-- VIEW 3: TRIGGERS & AUTOMATION MANAGER -->
-            <div id="canvas-triggers" class="hidden flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full space-y-6">
-                <div class="border-b border-[#201a30] pb-4 flex items-center justify-between">
-                    <div>
-                        <h2 class="text-base font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-bolt-lightning text-amber-400"></i> Event Triggers & Automations
-                        </h2>
-                        <p class="text-xs text-slate-400">Autonomous event loops: Cron schedules, AST file watchers, and inbound webhooks.</p>
-                    </div>
-                    <button onclick="toggleElement('trigger-modal')" class="btn-brand text-xs px-3.5 py-1.5 rounded-lg">+ New Trigger</button>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <!-- Trigger 1: Cron -->
-                    <div class="p-4 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-2.5">
-                        <div class="flex items-center justify-between">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-950 text-blue-400 border border-blue-800">SCHEDULE / CRON</span>
-                            <span class="text-[10px] text-emerald-400 font-mono">Active</span>
-                        </div>
-                        <h4 class="text-xs font-bold text-white">Periodic Health Check</h4>
-                        <p class="text-[11px] text-slate-400 font-mono">Interval: `*/30 * * * *` (Every 30 min)</p>
-                        <div class="text-[11px] text-slate-300 bg-black/40 p-2 rounded border border-[#201a30]">
-                            <strong>Action:</strong> Run `cargo check` and report warnings to active thread.
-                        </div>
-                    </div>
-
-                    <!-- Trigger 2: Watcher -->
-                    <div class="p-4 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-2.5">
-                        <div class="flex items-center justify-between">
-                            <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-950 text-[#c084fc] border border-purple-800">FILE WATCHER</span>
-                            <span class="text-[10px] text-emerald-400 font-mono">Active</span>
-                        </div>
-                        <h4 class="text-xs font-bold text-white">Auto Test on Save</h4>
-                        <p class="text-[11px] text-slate-400 font-mono">Path: `src/**/*.rs`</p>
-                        <div class="text-[11px] text-slate-300 bg-black/40 p-2 rounded border border-[#201a30]">
-                            <strong>Action:</strong> Trigger `cargo test` and suggest surgical rollback on regressions.
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- VIEW 4: MCP PLUGINS & UNIVERSAL SKILLS -->
-            <div id="canvas-mcp" class="hidden flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full space-y-6">
-                <div class="border-b border-[#201a30] pb-4">
-                    <h2 class="text-base font-bold text-white flex items-center gap-2">
-                        <i class="fa-solid fa-cubes text-[#c084fc]"></i> Model Context Protocol & Skills
-                    </h2>
-                    <p class="text-xs text-slate-400">Universal discovery across .claude, .gemini, .antigravity, and .deskpilot directories.</p>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="p-4 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-2">
-                        <div class="flex items-center justify-between">
-                            <h4 class="text-xs font-bold text-white">Claude SKILL.md Scanner</h4>
-                            <span class="text-[9px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">4 Skills Loaded</span>
-                        </div>
-                        <p class="text-[11px] text-slate-400">Zero-install local directory indexing: reads frontmatter specifications automatically.</p>
-                    </div>
-
-                    <div class="p-4 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-2">
-                        <div class="flex items-center justify-between">
-                            <h4 class="text-xs font-bold text-white">PostgreSQL MCP Server</h4>
-                            <span class="text-[9px] px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800 font-mono">Connected</span>
-                        </div>
-                        <p class="text-[11px] text-slate-400">Direct database introspection, schema validation, and SQL telemetry queries.</p>
-                    </div>
-                </div>
-            </div>
-
-            <!-- VIEW: PROVIDERS & MODEL ENGINES -->
-            <div id="canvas-providers" class="hidden flex-1 overflow-y-auto p-8 max-w-4xl mx-auto w-full space-y-6">
-                <div class="border-b border-[#201a30] pb-4 flex items-center justify-between">
-                    <div>
-                        <h2 class="text-base font-bold text-white flex items-center gap-2">
-                            <i class="fa-solid fa-server text-sky-400"></i> AI Model Providers & Routing
-                        </h2>
-                        <p class="text-xs text-slate-400">Add, configure, and hot-swap between multiple cloud frontier engines and offline local models.</p>
-                    </div>
-                    <button onclick="openProviderModal()" class="btn-brand text-xs px-3.5 py-1.5 rounded-lg flex items-center gap-1.5">
-                        <i class="fa-solid fa-plus text-[10px]"></i>
-                        <span>Add Provider</span>
-                    </button>
-                </div>
-
-                <!-- Quick Presets Section (1-Click Add) -->
-                <div class="space-y-3">
-                    <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">1-Click Quick Presets</span>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        <div onclick="selectPreset('openrouter')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
-                            <div class="flex items-center space-x-2 text-purple-400 font-bold text-xs">
-                                <i class="fa-solid fa-bolt"></i>
-                                <span>OpenRouter</span>
-                            </div>
-                            <p class="text-[10px] text-slate-400">Aggregates Claude 3.7, DeepSeek-R1, GPT-4o</p>
-                        </div>
-
-                        <div onclick="selectPreset('anthropic')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
-                            <div class="flex items-center space-x-2 text-amber-400 font-bold text-xs">
-                                <i class="fa-solid fa-cube"></i>
-                                <span>Anthropic Native</span>
-                            </div>
-                            <p class="text-[10px] text-slate-400">Direct Claude 3.7 Sonnet / Opus</p>
-                        </div>
-
-                        <div onclick="selectPreset('deepseek')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
-                            <div class="flex items-center space-x-2 text-sky-400 font-bold text-xs">
-                                <i class="fa-solid fa-brain"></i>
-                                <span>DeepSeek Official</span>
-                            </div>
-                            <p class="text-[10px] text-slate-400">High-speed DeepSeek-R1 & V3</p>
-                        </div>
-
-                        <div onclick="selectPreset('openai')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
-                            <div class="flex items-center space-x-2 text-emerald-400 font-bold text-xs">
-                                <i class="fa-solid fa-microchip"></i>
-                                <span>OpenAI Official</span>
-                            </div>
-                            <p class="text-[10px] text-slate-400">Direct GPT-4o, o1, o3-mini</p>
-                        </div>
-
-                        <div onclick="selectPreset('ollama')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
-                            <div class="flex items-center space-x-2 text-rose-400 font-bold text-xs">
-                                <i class="fa-solid fa-laptop-code"></i>
-                                <span>Local Ollama</span>
-                            </div>
-                            <p class="text-[10px] text-slate-400">100% Offline, Zero Token Cost</p>
-                        </div>
-
-                        <div onclick="selectPreset('custom')" class="p-3 rounded-xl bg-[#110e1c] border border-[#221b33] hover:border-[#aa3bff] hover:bg-[#181426] cursor-pointer transition space-y-1">
-                            <div class="flex items-center space-x-2 text-indigo-400 font-bold text-xs">
-                                <i class="fa-solid fa-shield-halved"></i>
-                                <span>Enterprise Gateway</span>
-                            </div>
-                            <p class="text-[10px] text-slate-400">vLLM, LiteLLM, Private VPC</p>
+                        <i class="fa-solid fa-arrow-right text-slate-600 text-xs flex-shrink-0"></i>
+                        <div class="p-3 rounded-lg bg-[#181426] border border-[#2b2240] text-slate-400 flex items-center gap-2 flex-shrink-0">
+                            <span>4. Verification Gates</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- Configured Providers Grid -->
-                <div class="space-y-3 pt-2">
+                <!-- Dynamic Living Spec & Todo Checklist -->
+                <div class="p-5 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-4">
                     <div class="flex items-center justify-between">
-                        <span class="text-[10px] uppercase font-bold tracking-wider text-slate-400">Configured Providers & Routing</span>
-                        <button onclick="loadProviders()" class="text-[10px] font-mono text-[#c084fc] hover:text-white">Refresh</button>
-                    </div>
-                    
-                    <div id="providers-list" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                        <!-- Loaded dynamically via loadProviders() -->
-                    </div>
-                </div>
-            </div>
-
-            <!-- VIEW 5: SETTINGS & VAULT -->
-            <div id="canvas-settings" class="hidden flex-1 overflow-y-auto p-8 max-w-3xl mx-auto w-full space-y-6">
-                <div class="border-b border-[#201a30] pb-4">
-                    <h2 class="text-base font-bold text-white flex items-center gap-2">
-                        <i class="fa-solid fa-sliders text-sky-400"></i> Engine Vault & API Configuration
-                    </h2>
-                    <p class="text-xs text-slate-400">Stored securely in local SQLite with WAL mode enabled.</p>
-                </div>
-
-                <div class="p-5 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-4 text-xs">
-                    <div>
-                        <label class="block font-semibold text-slate-300 mb-1.5">Execution Provider</label>
-                        <select id="setting-provider" class="w-full bg-[#181426] border border-[#2b2240] rounded-lg p-2.5 text-white focus:outline-none">
-                            <option value="OpenRouter">OpenRouter (Claude 3.7 Sonnet, DeepSeek-R1, GPT-4o)</option>
-                            <option value="Local Ollama">Local Ollama (100% Offline & Private)</option>
-                        </select>
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Active Specification Matrix & Todos</h3>
+                        <span class="text-[10px] text-slate-500 italic">Click checkbox to toggle strikethrough</span>
                     </div>
 
-                    <div>
-                        <label class="block font-semibold text-slate-300 mb-1.5">OpenRouter API Key</label>
-                        <input id="setting-or-key" type="password" placeholder="sk-or-v1-..." class="w-full bg-[#181426] border border-[#2b2240] rounded-lg p-2.5 text-white focus:outline-none font-mono" />
+                    <!-- Todo Items List -->
+                    <div id="todo-items-list" class="space-y-2 text-xs">
+                        <!-- Loaded dynamically via loadTasks() -->
                     </div>
 
-                    <div>
-                        <label class="block font-semibold text-slate-300 mb-1.5">Default Model Identifier</label>
-                        <input id="setting-or-model" type="text" value="anthropic/claude-3.7-sonnet" class="w-full bg-[#181426] border border-[#2b2240] rounded-lg p-2.5 text-white focus:outline-none font-mono" />
-                    </div>
-
-                    <div class="flex items-center pt-2">
-                        <button onclick="saveSettings()" class="btn-brand px-5 py-2 rounded-lg font-semibold text-xs">Save Configuration</button>
-                        <span id="save-status" class="ml-3 text-emerald-400 font-mono text-[11px] hidden">Saved to SQLite!</span>
+                    <!-- Add New Todo Input -->
+                    <div class="flex items-center space-x-2 pt-2 border-t border-[#1f1b2b]">
+                        <input id="new-task-input" type="text" placeholder="Add a new requirement or todo item..." 
+                            class="flex-1 bg-[#161224] border border-[#2b2240] rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-purple-600"
+                            onkeydown="if(event.key==='Enter'){ addNewTask(); }">
+                        <button onclick="addNewTask()" class="btn-brand px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1">
+                            <i class="fa-solid fa-plus text-[10px]"></i>
+                            <span>Add Task</span>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -645,6 +415,15 @@
                     <i class="fa-solid fa-gauge-high text-[#c084fc]"></i> Context Inspector
                 </span>
                 <span class="text-[9px] font-mono text-emerald-400">Live</span>
+            </div>
+
+            <!-- Active Project Info -->
+            <div class="p-3 rounded-lg bg-[#141120] border border-[#241f33] space-y-1.5 text-xs">
+                <span class="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <i class="fa-solid fa-folder text-purple-400"></i> Current Project
+                </span>
+                <div class="text-[11px] text-slate-300 font-bold" id="inspector-proj-name">deskpilot</div>
+                <div class="text-[10px] font-mono text-slate-400 truncate bg-black/40 p-1.5 rounded border border-[#201a30]" id="inspector-proj-path">D:\Repos\Deskpilot\deskpilot</div>
             </div>
 
             <!-- Time-Travel Checkpoint Deck -->
@@ -681,22 +460,296 @@
                     <button onclick="loadGotchas()" class="text-[10px] text-purple-300/80 hover:text-white font-mono">Sync</button>
                 </div>
                 <div id="gotchas-container" class="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                    <div class="p-2.5 rounded-lg bg-[#120e1e] border border-[#221b33] text-xs space-y-1">
-                        <div class="flex items-center justify-between">
-                            <span class="px-1.5 py-0.5 rounded text-[9px] font-mono bg-purple-950/40 text-purple-300 border border-purple-900/40 font-semibold">Axum IPC</span>
-                            <span class="text-[9px] font-mono text-emerald-400/80">98% Confirmed</span>
-                        </div>
-                        <p class="text-[10px] text-slate-300 leading-tight">EventSource drops silently without keep-alive ping</p>
-                        <div class="text-[9px] text-slate-400 font-mono bg-black/30 p-1 rounded border border-[#1e1a2c]">
-                            <span class="text-purple-300/70">Rule:</span> Yield SSE comment ping every 15s
-                        </div>
-                    </div>
+                    <!-- Gotchas rendered dynamically -->
                 </div>
             </div>
         </aside>
     </div>
 
-    <!-- 3. ADD / EDIT PROVIDER MODAL -->
+    <!-- 3. UNIFIED SETTINGS MODAL (Houses all Providers, Triggers, MCP, Vault, and Projects) -->
+    <div id="settings-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+        <div class="glass-dock max-w-3xl w-full h-[85vh] rounded-2xl flex flex-col border border-[#2d2242] shadow-2xl overflow-hidden">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between px-6 py-4 border-b border-[#201a30] bg-[#120e1e]">
+                <div class="flex items-center space-x-2.5">
+                    <i class="fa-solid fa-gear text-purple-400 text-base"></i>
+                    <h3 class="text-sm font-bold text-white tracking-wide">Studio Engine Settings & Configuration</h3>
+                </div>
+                <button onclick="closeSettingsModal()" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-xmark text-sm"></i></button>
+            </div>
+
+            <!-- Modal Body with Tabs -->
+            <div class="flex flex-1 overflow-hidden">
+                <!-- Settings Tabs Sidebar -->
+                <div class="w-48 bg-[#0d0a17] border-r border-[#1f1b2b] p-2 space-y-1 text-xs">
+                    <button onclick="switchSettingsTab('providers')" id="tab-btn-providers" class="active-tab w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-left nav-item">
+                        <i class="fa-solid fa-server text-sky-400 w-4 text-center"></i>
+                        <span>AI Providers & Keys</span>
+                    </button>
+                    <button onclick="switchSettingsTab('triggers')" id="tab-btn-triggers" class="w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-left nav-item text-slate-400">
+                        <i class="fa-solid fa-clock-rotate-left text-amber-400 w-4 text-center"></i>
+                        <span>Triggers & Automation</span>
+                    </button>
+                    <button onclick="switchSettingsTab('mcp')" id="tab-btn-mcp" class="w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-left nav-item text-slate-400">
+                        <i class="fa-solid fa-cubes text-purple-400 w-4 text-center"></i>
+                        <span>MCP Plugins & Skills</span>
+                    </button>
+                    <button onclick="switchSettingsTab('vault')" id="tab-btn-vault" class="w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-left nav-item text-slate-400">
+                        <i class="fa-solid fa-sliders text-sky-400 w-4 text-center"></i>
+                        <span>Engine Vault & Keys</span>
+                    </button>
+                    <button onclick="switchSettingsTab('projects-mgr')" id="tab-btn-projects-mgr" class="w-full flex items-center space-x-2 px-3 py-2 rounded-lg text-left nav-item text-slate-400">
+                        <i class="fa-solid fa-folder text-emerald-400 w-4 text-center"></i>
+                        <span>Project Workspaces</span>
+                    </button>
+                </div>
+
+                <!-- Settings Tab Content Panes -->
+                <div class="flex-1 p-6 overflow-y-auto bg-[#0a0812]">
+                    
+                    <!-- TAB 1: AI PROVIDERS -->
+                    <div id="stab-providers" class="space-y-5">
+                        <div class="flex items-center justify-between pb-3 border-b border-[#201a30]">
+                            <div>
+                                <h4 class="text-xs font-bold text-white uppercase tracking-wider">AI Model Providers & Routing</h4>
+                                <p class="text-[11px] text-slate-400">Configure cloud frontier keys and local Ollama routing.</p>
+                            </div>
+                            <button onclick="openProviderModal()" class="btn-brand text-xs px-3 py-1.5 rounded-lg">+ Add Provider</button>
+                        </div>
+
+                        <!-- 1-Click Quick Presets -->
+                        <div class="space-y-2">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">1-Click Presets</span>
+                            <div class="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                                <div onclick="selectPreset('openrouter')" class="p-2.5 rounded-xl bg-[#120f1e] border border-[#231b33] hover:border-purple-600/60 cursor-pointer transition">
+                                    <div class="flex items-center space-x-1.5 text-purple-400 font-bold text-xs">
+                                        <i class="fa-solid fa-bolt"></i><span>OpenRouter</span>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400">Aggregates Claude 3.7 & DeepSeek-R1</p>
+                                </div>
+                                <div onclick="selectPreset('ollama')" class="p-2.5 rounded-xl bg-[#120f1e] border border-[#231b33] hover:border-purple-600/60 cursor-pointer transition">
+                                    <div class="flex items-center space-x-1.5 text-rose-400 font-bold text-xs">
+                                        <i class="fa-solid fa-laptop-code"></i><span>Local Ollama</span>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400">100% Offline, Zero Token Cost</p>
+                                </div>
+                                <div onclick="selectPreset('anthropic')" class="p-2.5 rounded-xl bg-[#120f1e] border border-[#231b33] hover:border-purple-600/60 cursor-pointer transition">
+                                    <div class="flex items-center space-x-1.5 text-amber-400 font-bold text-xs">
+                                        <i class="fa-solid fa-cube"></i><span>Anthropic</span>
+                                    </div>
+                                    <p class="text-[10px] text-slate-400">Direct Claude 3.7 Sonnet</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Configured Providers List -->
+                        <div class="space-y-2.5">
+                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Active & Configured Providers</span>
+                            <div id="providers-list" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <!-- Loaded dynamically via loadProviders() -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 2: TRIGGERS & AUTOMATION -->
+                    <div id="stab-triggers" class="hidden space-y-5">
+                        <div class="flex items-center justify-between pb-3 border-b border-[#201a30]">
+                            <div>
+                                <h4 class="text-xs font-bold text-white uppercase tracking-wider">Event Triggers & Scheduled Tasks</h4>
+                                <p class="text-[11px] text-slate-400">Cron schedules, file watchers, and autonomous event loops.</p>
+                            </div>
+                            <button onclick="toggleElement('trigger-modal')" class="btn-brand text-xs px-3 py-1.5 rounded-lg">+ New Trigger</button>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                            <div class="p-4 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-blue-950 text-blue-400 border border-blue-800">SCHEDULE / CRON</span>
+                                    <span class="text-[10px] text-emerald-400 font-mono">Active</span>
+                                </div>
+                                <h4 class="text-xs font-bold text-white">Periodic Health Check</h4>
+                                <p class="text-[11px] text-slate-400 font-mono">Interval: `*/30 * * * *` (Every 30 min)</p>
+                                <div class="text-[11px] text-slate-300 bg-black/40 p-2 rounded border border-[#201a30]">
+                                    <strong>Action:</strong> Run `cargo check` and report warnings.
+                                </div>
+                            </div>
+
+                            <div class="p-4 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <span class="px-2 py-0.5 rounded text-[10px] font-mono bg-purple-950 text-[#c084fc] border border-purple-800">FILE WATCHER</span>
+                                    <span class="text-[10px] text-emerald-400 font-mono">Active</span>
+                                </div>
+                                <h4 class="text-xs font-bold text-white">Auto Test on Save</h4>
+                                <p class="text-[11px] text-slate-400 font-mono">Path: `src/**/*.rs`</p>
+                                <div class="text-[11px] text-slate-300 bg-black/40 p-2 rounded border border-[#201a30]">
+                                    <strong>Action:</strong> Trigger `cargo test` on file modifications.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 3: MCP PLUGINS & SKILLS -->
+                    <div id="stab-mcp" class="hidden space-y-5">
+                        <div class="pb-3 border-b border-[#201a30]">
+                            <h4 class="text-xs font-bold text-white uppercase tracking-wider">Model Context Protocol & Skills</h4>
+                            <p class="text-[11px] text-slate-400">Universal skills scanner across .claude, .gemini, .antigravity, and .deskpilot.</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                            <div class="p-4 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <h4 class="text-xs font-bold text-white">Universal SKILL.md Scanner</h4>
+                                    <span class="text-[9px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono">4 Skills Loaded</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">Reads frontmatter specifications and equips agents automatically.</p>
+                            </div>
+
+                            <div class="p-4 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-2">
+                                <div class="flex items-center justify-between">
+                                    <h4 class="text-xs font-bold text-white">Local Workspace Introspection</h4>
+                                    <span class="text-[9px] px-2 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800 font-mono">Connected</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">AST symbol indexing and fast grep across project roots.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 4: ENGINE VAULT -->
+                    <div id="stab-vault" class="hidden space-y-5">
+                        <div class="pb-3 border-b border-[#201a30]">
+                            <h4 class="text-xs font-bold text-white uppercase tracking-wider">Engine Vault & API Configuration</h4>
+                            <p class="text-[11px] text-slate-400">Stored securely in local SQLite with PRAGMA WAL enabled.</p>
+                        </div>
+
+                        <div class="p-5 rounded-xl bg-[#110e1c] border border-[#221b33] space-y-4 text-xs">
+                            <div>
+                                <label class="block font-semibold text-slate-300 mb-1.5">Execution Provider</label>
+                                <select id="setting-provider" class="w-full bg-[#181426] border border-[#2b2240] rounded-lg p-2.5 text-white focus:outline-none">
+                                    <option value="OpenRouter">OpenRouter (Claude 3.7 Sonnet, DeepSeek-R1, GPT-4o)</option>
+                                    <option value="Local Ollama">Local Ollama (100% Offline & Private)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label class="block font-semibold text-slate-300 mb-1.5">OpenRouter API Key</label>
+                                <input id="setting-or-key" type="password" placeholder="sk-or-v1-..." class="w-full bg-[#181426] border border-[#2b2240] rounded-lg p-2.5 text-white focus:outline-none font-mono" />
+                            </div>
+
+                            <div>
+                                <label class="block font-semibold text-slate-300 mb-1.5">Default Model Identifier</label>
+                                <input id="setting-or-model" type="text" value="anthropic/claude-3.7-sonnet" class="w-full bg-[#181426] border border-[#2b2240] rounded-lg p-2.5 text-white focus:outline-none font-mono" />
+                            </div>
+
+                            <div class="flex items-center pt-2">
+                                <button onclick="saveSettings()" class="btn-brand px-5 py-2 rounded-lg font-semibold text-xs">Save Configuration</button>
+                                <span id="save-status" class="ml-3 text-emerald-400 font-mono text-[11px] hidden">Saved to SQLite!</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TAB 5: PROJECT WORKSPACES MANAGEMENT -->
+                    <div id="stab-projects-mgr" class="hidden space-y-5">
+                        <div class="flex items-center justify-between pb-3 border-b border-[#201a30]">
+                            <div>
+                                <h4 class="text-xs font-bold text-white uppercase tracking-wider">Project Workspaces & Paths</h4>
+                                <p class="text-[11px] text-slate-400">View and manage local directories assigned to each workspace.</p>
+                            </div>
+                            <button onclick="openNewProjectModal()" class="btn-brand text-xs px-3 py-1.5 rounded-lg">+ New Project</button>
+                        </div>
+
+                        <div id="settings-projects-list" class="space-y-3">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 4. CREATE NEW PROJECT MODAL (With Path Selection) -->
+    <div id="new-project-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="glass-dock max-w-md w-full rounded-2xl p-6 border border-[#2d2242] shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-[#201a30] pb-3">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-folder-plus text-purple-400"></i> Create New Project
+                </h3>
+                <button onclick="toggleElement('new-project-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-300 font-semibold mb-1">Project Name</label>
+                    <input id="new-proj-name" type="text" placeholder="e.g. PodOps, MobileApp, DeskPilot" 
+                        class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-600" />
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 font-semibold mb-1">Project Directory Path</label>
+                    <input id="new-proj-path" type="text" placeholder="e.g. D:\Repos\PodOps or C:\Users\Projects\App" 
+                        class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-600 font-mono text-[11px]" />
+                    <p class="text-[10px] text-slate-500 mt-1">Local path where DeskPilot will execute tasks and AST analysis.</p>
+                </div>
+
+                <!-- Quick Path Suggestions -->
+                <div class="pt-1">
+                    <span class="text-[10px] text-slate-400 font-medium">Quick Suggestions:</span>
+                    <div class="flex flex-wrap gap-1.5 mt-1">
+                        <button type="button" onclick="setProjectPathSuggestion('D:\\Repos\\Deskpilot\\deskpilot')" class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#181426] border border-[#2b2440] text-purple-300 hover:bg-[#201934]">DeskPilot Repo</button>
+                        <button type="button" onclick="setProjectPathSuggestion('D:\\Repos')" class="text-[10px] font-mono px-2 py-0.5 rounded bg-[#181426] border border-[#2b2440] text-slate-400 hover:bg-[#201934]">D:\Repos</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-end space-x-2.5 pt-3 border-t border-[#201a30]">
+                <button onclick="toggleElement('new-project-modal')" class="px-4 py-2 rounded-lg bg-[#191426] hover:bg-[#221b33] text-slate-300 text-xs font-semibold">Cancel</button>
+                <button onclick="createNewProject()" class="btn-brand px-5 py-2 rounded-lg text-xs font-semibold">Create Project</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. PROJECT SETTINGS MODAL (Edit Path / Copy Name) -->
+    <div id="project-settings-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="glass-dock max-w-md w-full rounded-2xl p-6 border border-[#2d2242] shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-[#201a30] pb-3">
+                <h3 class="text-sm font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-gear text-purple-400"></i> Project Settings
+                </h3>
+                <button onclick="toggleElement('project-settings-modal')" class="text-slate-400 hover:text-white"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+
+            <input type="hidden" id="edit-proj-id" value="1" />
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-slate-300 font-semibold mb-1">Project Name</label>
+                    <div class="flex items-center space-x-2">
+                        <input id="edit-proj-name" type="text" readonly class="flex-1 bg-[#120e1e] border border-[#231b34] rounded-lg p-2.5 text-slate-300 focus:outline-none" />
+                        <button onclick="copyProjectNameFromModal()" class="px-3 py-2.5 rounded-lg bg-[#191426] hover:bg-[#221b33] text-purple-300 text-xs" title="Copy Name">
+                            <i class="fa-regular fa-copy"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-slate-300 font-semibold mb-1">Project Workspace Path</label>
+                    <input id="edit-proj-path" type="text" class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-600 font-mono text-[11px]" />
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 border-t border-[#201a30]">
+                <button onclick="copyProjectNameFromModal()" class="text-purple-400 hover:text-purple-300 text-xs flex items-center gap-1">
+                    <i class="fa-regular fa-copy"></i>
+                    <span>Copy Project Name</span>
+                </button>
+                <div class="flex items-center space-x-2">
+                    <button onclick="toggleElement('project-settings-modal')" class="px-4 py-2 rounded-lg bg-[#191426] hover:bg-[#221b33] text-slate-300 text-xs">Cancel</button>
+                    <button onclick="saveProjectPath()" class="btn-brand px-5 py-2 rounded-lg text-xs font-semibold">Save Path</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. ADD / EDIT PROVIDER MODAL -->
     <div id="provider-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
         <div class="glass-dock max-w-lg w-full rounded-2xl p-6 border border-[#2d2242] shadow-2xl space-y-4">
             <div class="flex items-center justify-between border-b border-[#201a30] pb-3">
@@ -709,7 +762,7 @@
             <div class="space-y-3 text-xs">
                 <div>
                     <label class="block text-slate-300 font-semibold mb-1">Provider Label / Name</label>
-                    <input id="prov-name" type="text" placeholder="e.g. OpenRouter Primary, Internal vLLM" class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-[#aa3bff]" />
+                    <input id="prov-name" type="text" placeholder="e.g. OpenRouter Primary, Internal vLLM" class="w-full bg-[#141120] border border-[#27203b] rounded-lg p-2.5 text-white focus:outline-none focus:border-purple-600" />
                 </div>
 
                 <div class="grid grid-cols-2 gap-3">
@@ -758,7 +811,11 @@
         let thinkEnabled = true;
         let currentProject = 1;
         let currentConversation = 1;
+        let projectsCache = [];
+        let conversationsCache = {};
+        let tasksCache = [];
 
+        // Mode Switching
         function setCanvasMode(mode) {
             document.getElementById('canvas-chat').classList.toggle('hidden', mode !== 'chat');
             document.getElementById('canvas-spec').classList.toggle('hidden', mode !== 'spec');
@@ -766,29 +823,490 @@
             const btnChat = document.getElementById('mode-btn-chat');
             const btnSpec = document.getElementById('mode-btn-spec');
             if (mode === 'chat') {
-                btnChat.className = 'px-3 py-1 rounded-md text-white font-medium bg-[#241f33] transition flex items-center gap-1.5';
-                btnSpec.className = 'px-3 py-1 rounded-md text-slate-400 hover:text-white transition flex items-center gap-1.5';
+                btnChat.className = 'px-2.5 py-1 rounded-md text-white font-medium bg-[#241f33] transition flex items-center gap-1.5';
+                btnSpec.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition flex items-center gap-1.5';
             } else {
-                btnSpec.className = 'px-3 py-1 rounded-md text-white font-medium bg-[#241f33] transition flex items-center gap-1.5';
-                btnChat.className = 'px-3 py-1 rounded-md text-slate-400 hover:text-white transition flex items-center gap-1.5';
+                btnSpec.className = 'px-2.5 py-1 rounded-md text-white font-medium bg-[#241f33] transition flex items-center gap-1.5';
+                btnChat.className = 'px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition flex items-center gap-1.5';
+                loadTasks();
             }
         }
 
-        function switchNav(nav) {
-            ['chat', 'providers', 'triggers', 'mcp', 'settings'].forEach(v => {
-                const el = document.getElementById('canvas-' + v);
-                const btn = document.getElementById('nav-' + v);
-                if (el) el.classList.toggle('hidden', v !== nav);
-                if (btn) btn.classList.toggle('active-tab', v === nav);
+        // Settings Modal Management
+        function openSettingsModal() {
+            document.getElementById('settings-modal').classList.remove('hidden');
+            loadProviders();
+            renderSettingsProjectsList();
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').classList.add('hidden');
+        }
+
+        function openSettingsTab(tabName) {
+            openSettingsModal();
+            switchSettingsTab(tabName);
+        }
+
+        function switchSettingsTab(tab) {
+            const tabs = ['providers', 'triggers', 'mcp', 'vault', 'projects-mgr'];
+            tabs.forEach(t => {
+                const pane = document.getElementById('stab-' + t);
+                const btn = document.getElementById('tab-btn-' + t);
+                if (pane) pane.classList.toggle('hidden', t !== tab);
+                if (btn) btn.classList.toggle('active-tab', t === tab);
             });
-            if (nav === 'chat') {
-                document.getElementById('canvas-spec').classList.add('hidden');
-            }
-            if (nav === 'providers') {
-                loadProviders();
+        }
+
+        // Projects & Conversations Management
+        async function loadProjects() {
+            try {
+                const res = await fetch('/api/projects');
+                const list = await res.json();
+                projectsCache = list;
+                renderProjectsTree();
+                
+                // Set initial active project
+                const active = list.find(p => p.id === currentProject) || list[0];
+                if (active) {
+                    setActiveProject(active.id, false);
+                }
+            } catch (err) {
+                console.error("Failed to load projects:", err);
             }
         }
 
+        function renderProjectsTree() {
+            const container = document.getElementById('projects-tree');
+            if (!container) return;
+            container.innerHTML = '';
+
+            projectsCache.forEach(proj => {
+                const isActive = proj.id === currentProject;
+                const projDiv = document.createElement('div');
+                projDiv.className = 'space-y-1';
+
+                const header = document.createElement('div');
+                header.className = `flex items-center justify-between px-2 py-1.5 rounded-md cursor-pointer group ${isActive ? 'bg-[#181326] text-white font-semibold' : 'text-slate-400 hover:text-white hover:bg-[#141120]'}`;
+                
+                header.innerHTML = `
+                    <div class="flex items-center space-x-2 truncate flex-1" onclick="setActiveProject(${proj.id})">
+                        <i class="fa-solid fa-chevron-${isActive ? 'down' : 'right'} text-[8px] text-slate-500"></i>
+                        <i class="fa-regular fa-folder ${isActive ? 'text-purple-400' : 'text-slate-400'} text-xs"></i>
+                        <span class="truncate text-xs">${escapeHtml(proj.name)}</span>
+                    </div>
+                    <div class="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onclick="event.stopPropagation(); openProjectSettingsModal(${proj.id})" class="p-1 rounded hover:bg-[#231b36] text-slate-400 hover:text-white" title="Project Settings">
+                            <i class="fa-solid fa-ellipsis-vertical text-[10px]"></i>
+                        </button>
+                        <button onclick="event.stopPropagation(); newConversationInProject(${proj.id})" class="p-1 rounded hover:bg-[#231b36] text-slate-400 hover:text-white" title="New Chat in Project">
+                            <i class="fa-solid fa-plus text-[9px]"></i>
+                        </button>
+                    </div>
+                `;
+                projDiv.appendChild(header);
+
+                // Threads container under active project
+                if (isActive) {
+                    const threadsDiv = document.createElement('div');
+                    threadsDiv.id = `threads-proj-${proj.id}`;
+                    threadsDiv.className = 'pl-4 space-y-0.5 border-l border-[#201c2e] ml-3 mt-0.5';
+                    projDiv.appendChild(threadsDiv);
+                    loadConversations(proj.id);
+                }
+
+                container.appendChild(projDiv);
+            });
+        }
+
+        async function loadConversations(projId) {
+            try {
+                const res = await fetch(`/api/projects/${projId}/conversations`);
+                const list = await res.json();
+                conversationsCache[projId] = list;
+
+                const container = document.getElementById(`threads-proj-${projId}`);
+                if (!container) return;
+                container.innerHTML = '';
+
+                if (list.length === 0) {
+                    container.innerHTML = '<div class="text-[10px] text-slate-500 italic px-2 py-1">No chats yet</div>';
+                    return;
+                }
+
+                list.forEach(c => {
+                    const isCurrent = c.id === currentConversation;
+                    const item = document.createElement('div');
+                    item.className = `px-2 py-1.5 rounded-md text-[11px] flex items-center justify-between cursor-pointer transition ${isCurrent ? 'bg-[#1f1733] border border-[#352857] text-purple-200' : 'text-slate-400 hover:bg-[#141120] hover:text-slate-200'}`;
+                    item.onclick = () => switchConversation(c.id);
+
+                    const timeAgo = c.updated_at ? Math.max(1, Math.round((Date.now() / 1000 - c.updated_at) / 60)) + 'm' : '10m';
+
+                    item.innerHTML = `
+                        <span class="truncate flex-1 pr-1">${escapeHtml(c.title || 'New Chat')}</span>
+                        <span class="text-[9px] text-slate-500 font-mono flex-shrink-0">${timeAgo}</span>
+                    `;
+                    container.appendChild(item);
+                });
+            } catch (err) {
+                console.error("Failed to load conversations:", err);
+            }
+        }
+
+        function setActiveProject(projId, refresh = true) {
+            currentProject = projId;
+            const proj = projectsCache.find(p => p.id === projId);
+            if (proj) {
+                document.getElementById('active-project-name').innerText = proj.name;
+                document.getElementById('active-project-path-tag').innerText = proj.path || 'No path';
+                document.getElementById('inspector-proj-name').innerText = proj.name;
+                document.getElementById('inspector-proj-path').innerText = proj.path || 'No path configured';
+            }
+            if (refresh) {
+                renderProjectsTree();
+                loadTasks();
+            }
+        }
+
+        async function switchConversation(convId) {
+            currentConversation = convId;
+            renderProjectsTree();
+            await loadMessages(convId);
+        }
+
+        async function newConversation() {
+            newConversationInProject(currentProject);
+        }
+
+        async function newConversationInProject(projId) {
+            const title = 'Chat ' + (new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            try {
+                const res = await fetch(`/api/projects/${projId}/conversations`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title })
+                });
+                const data = await res.json();
+                currentConversation = data.id;
+                setActiveProject(projId);
+                resetChatToInstructional();
+            } catch (err) {
+                console.error("Failed to create conversation:", err);
+            }
+        }
+
+        function resetChatToInstructional() {
+            const messages = document.getElementById('messages');
+            messages.innerHTML = `
+                <div id="welcome-empty-state" class="py-6 space-y-6">
+                    <div class="text-center space-y-2 max-w-lg mx-auto pt-6">
+                        <div class="w-12 h-12 mx-auto rounded-2xl bg-purple-950/50 border border-purple-800/60 flex items-center justify-center text-[#c084fc] text-xl shadow-lg">
+                            <i class="fa-solid fa-bolt-lightning"></i>
+                        </div>
+                        <h2 class="text-base font-bold text-white tracking-wide">DeskPilot Autonomous Studio</h2>
+                        <p class="text-xs text-slate-400 leading-relaxed">
+                            Ready in active workspace. Instruct DeskPilot or select an example prompt below.
+                        </p>
+                    </div>
+
+                    <div class="space-y-2.5 max-w-xl mx-auto">
+                        <div class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider px-1">
+                            <i class="fa-solid fa-lightbulb text-amber-400 mr-1"></i> Quick Instructions:
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div onclick="useExamplePrompt('Inspect repository structure and explain the architecture')" class="p-3 rounded-xl bg-[#120f1e] border border-[#231b34] hover:border-purple-600/60 hover:bg-[#181329] cursor-pointer transition space-y-1">
+                                <div class="text-xs font-semibold text-purple-300 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-diagram-project text-[10px]"></i>
+                                    <span>Analyze Architecture</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">Scan codebase AST & explain structure</p>
+                            </div>
+                            <div onclick="useExamplePrompt('Find potential bugs, test gaps and suggest improvements')" class="p-3 rounded-xl bg-[#120f1e] border border-[#231b34] hover:border-purple-600/60 hover:bg-[#181329] cursor-pointer transition space-y-1">
+                                <div class="text-xs font-semibold text-sky-300 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-bug-slash text-[10px]"></i>
+                                    <span>Find Defect Risks</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">Identify unhandled edge cases & bugs</p>
+                            </div>
+                            <div onclick="useExamplePrompt('Generate execution living spec and todo checklist for new feature')" class="p-3 rounded-xl bg-[#120f1e] border border-[#231b34] hover:border-purple-600/60 hover:bg-[#181329] cursor-pointer transition space-y-1">
+                                <div class="text-xs font-semibold text-emerald-300 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-list-check text-[10px]"></i>
+                                    <span>Generate Living Spec</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">Draft verification gates & execution todos</p>
+                            </div>
+                            <div onclick="useExamplePrompt('Create unit tests with verification gates')" class="p-3 rounded-xl bg-[#120f1e] border border-[#231b34] hover:border-purple-600/60 hover:bg-[#181329] cursor-pointer transition space-y-1">
+                                <div class="text-xs font-semibold text-amber-300 flex items-center gap-1.5">
+                                    <i class="fa-solid fa-vial-circle-check text-[10px]"></i>
+                                    <span>Automated Test Gates</span>
+                                </div>
+                                <p class="text-[11px] text-slate-400">Implement surgical tests with self-healing</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('prompt-input').focus();
+        }
+
+        async function loadMessages(convId) {
+            try {
+                const res = await fetch(`/api/messages/${convId}`);
+                const msgs = await res.json();
+                const messages = document.getElementById('messages');
+                messages.innerHTML = '';
+
+                if (!msgs || msgs.length === 0) {
+                    resetChatToInstructional();
+                    return;
+                }
+
+                msgs.forEach(m => {
+                    if (m.role === 'user') {
+                        const userDiv = document.createElement('div');
+                        userDiv.className = 'flex justify-end';
+                        userDiv.innerHTML = `<div class="bg-[#181426] border border-[#2b2440] text-purple-100 px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-2xl text-xs leading-relaxed shadow-sm">${escapeHtml(m.content)}</div>`;
+                        messages.appendChild(userDiv);
+                    } else if (m.role === 'assistant') {
+                        const assistantDiv = document.createElement('div');
+                        assistantDiv.className = 'flex items-start gap-3 text-xs';
+                        
+                        let thinkingHtml = '';
+                        if (m.thinking && m.thinking.trim().length > 0) {
+                            thinkingHtml = `
+                                <details class="mb-2 group border border-purple-900/40 bg-[#0c0a16] rounded-lg overflow-hidden">
+                                    <summary class="cursor-pointer px-3 py-1.5 text-[10px] font-mono text-purple-300/80 hover:text-purple-200 flex items-center justify-between select-none bg-[#110d1f]">
+                                        <span class="flex items-center gap-1.5">
+                                            <i class="fa-solid fa-lightbulb text-amber-400/80 text-[10px]"></i>
+                                            Thought Process
+                                        </span>
+                                        <i class="fa-solid fa-chevron-down text-[9px] text-slate-500 group-open:rotate-180 transition-transform"></i>
+                                    </summary>
+                                    <div class="p-3 text-[11px] text-slate-400 font-mono leading-relaxed border-t border-[#1d172e] bg-[#090712] whitespace-pre-wrap max-h-60 overflow-y-auto">
+                                        ${escapeHtml(m.thinking)}
+                                    </div>
+                                </details>
+                            `;
+                        }
+
+                        assistantDiv.innerHTML = `
+                            <div class="w-6 h-6 rounded-md bg-purple-950/60 border border-purple-800/40 flex items-center justify-center text-purple-300 flex-shrink-0">
+                                <i class="fa-solid fa-bolt text-[11px]"></i>
+                            </div>
+                            <div class="space-y-1 flex-1 max-w-2xl">
+                                ${thinkingHtml}
+                                <div class="bg-[#120f1d] border border-[#231b36] text-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed whitespace-pre-wrap shadow-sm">
+                                    ${escapeHtml(m.content)}
+                                </div>
+                            </div>
+                        `;
+                        messages.appendChild(assistantDiv);
+                    }
+                });
+                messages.scrollTop = messages.scrollHeight;
+            } catch (err) {
+                console.error(err);
+            }
+        }
+
+        // New Project Modal
+        function toggleProjectMenu() {
+            toggleElement('project-menu-popup');
+        }
+
+        function openNewProjectModal() {
+            document.getElementById('project-menu-popup').classList.add('hidden');
+            document.getElementById('new-proj-name').value = '';
+            document.getElementById('new-proj-path').value = '';
+            document.getElementById('new-project-modal').classList.remove('hidden');
+            document.getElementById('new-proj-name').focus();
+        }
+
+        function openQuickStartProject() {
+            document.getElementById('project-menu-popup').classList.add('hidden');
+            document.getElementById('new-proj-name').value = 'QuickStart-' + Math.floor(Math.random() * 1000);
+            document.getElementById('new-proj-path').value = 'D:\\Repos\\Deskpilot\\workspace';
+            document.getElementById('new-project-modal').classList.remove('hidden');
+        }
+
+        function setProjectPathSuggestion(path) {
+            document.getElementById('new-proj-path').value = path;
+        }
+
+        async function createNewProject() {
+            const name = document.getElementById('new-proj-name').value.trim();
+            const path = document.getElementById('new-proj-path').value.trim();
+            if (!name) {
+                alert('Please enter a project name.');
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, path })
+                });
+                const data = await res.json();
+                document.getElementById('new-project-modal').classList.add('hidden');
+                await loadProjects();
+                setActiveProject(data.id);
+                resetChatToInstructional();
+            } catch (err) {
+                console.error("Failed to create project:", err);
+            }
+        }
+
+        function openProjectSettingsModal(projId) {
+            const proj = projectsCache.find(p => p.id === projId);
+            if (!proj) return;
+            document.getElementById('edit-proj-id').value = proj.id;
+            document.getElementById('edit-proj-name').value = proj.name;
+            document.getElementById('edit-proj-path').value = proj.path || '';
+            document.getElementById('project-settings-modal').classList.remove('hidden');
+        }
+
+        async function saveProjectPath() {
+            const id = document.getElementById('edit-proj-id').value;
+            const path = document.getElementById('edit-proj-path').value.trim();
+            try {
+                await fetch(`/api/projects/${id}/path`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path })
+                });
+                document.getElementById('project-settings-modal').classList.add('hidden');
+                await loadProjects();
+                setActiveProject(parseInt(id));
+            } catch (err) {
+                console.error("Failed to update project path:", err);
+            }
+        }
+
+        function copyProjectNameFromModal() {
+            const name = document.getElementById('edit-proj-name').value;
+            navigator.clipboard.writeText(name);
+            alert(`Project name "${name}" copied to clipboard!`);
+        }
+
+        function renderSettingsProjectsList() {
+            const container = document.getElementById('settings-projects-list');
+            if (!container) return;
+            container.innerHTML = '';
+
+            projectsCache.forEach(p => {
+                const card = document.createElement('div');
+                card.className = 'p-3 rounded-xl bg-[#120f1e] border border-[#231b34] flex items-center justify-between text-xs';
+                card.innerHTML = `
+                    <div class="space-y-0.5 truncate flex-1 pr-2">
+                        <div class="font-bold text-slate-200 flex items-center gap-1.5">
+                            <i class="fa-solid fa-folder text-purple-400 text-xs"></i>
+                            <span>${escapeHtml(p.name)}</span>
+                            ${p.id === currentProject ? '<span class="text-[9px] px-1.5 py-0.2 rounded bg-purple-950 text-purple-300 border border-purple-800 font-mono">ACTIVE</span>' : ''}
+                        </div>
+                        <div class="text-[10px] font-mono text-slate-400 truncate">${escapeHtml(p.path || 'No path configured')}</div>
+                    </div>
+                    <button onclick="openProjectSettingsModal(${p.id})" class="px-2.5 py-1 rounded bg-[#1f1733] hover:bg-[#2b2046] text-purple-300 text-[11px] font-medium transition">
+                        Edit Path
+                    </button>
+                `;
+                container.appendChild(card);
+            });
+        }
+
+        // Living Spec & Todo Checklist Logic
+        async function loadTasks() {
+            try {
+                const res = await fetch(`/api/projects/${currentProject}/tasks`);
+                const list = await res.json();
+                tasksCache = list;
+                renderTasks();
+            } catch (err) {
+                console.error("Failed to load tasks:", err);
+            }
+        }
+
+        function renderTasks() {
+            const container = document.getElementById('todo-items-list');
+            if (!container) return;
+            container.innerHTML = '';
+
+            if (tasksCache.length === 0) {
+                container.innerHTML = '<div class="text-[11px] text-slate-500 italic p-2">No tasks defined yet. Add one below!</div>';
+                return;
+            }
+
+            tasksCache.forEach(t => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center space-x-2.5 p-2 rounded-lg hover:bg-[#181426] cursor-pointer transition select-none group';
+                
+                const isChecked = !!t.done;
+                label.innerHTML = `
+                    <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleTaskDone(${t.id}, this.checked)" class="accent-purple-500 rounded cursor-pointer w-4 h-4" />
+                    <span class="task-title-span ${isChecked ? 'todo-done' : 'todo-pending'} transition-all">${escapeHtml(t.title)}</span>
+                `;
+                container.appendChild(label);
+            });
+        }
+
+        async function toggleTaskDone(taskId, done) {
+            try {
+                await fetch(`/api/tasks/${taskId}/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ done })
+                });
+                const item = tasksCache.find(t => t.id === taskId);
+                if (item) item.done = done;
+                renderTasks();
+            } catch (err) {
+                console.error("Failed to toggle task:", err);
+            }
+        }
+
+        async function addNewTask() {
+            const input = document.getElementById('new-task-input');
+            const title = input.value.trim();
+            if (!title) return;
+
+            try {
+                const res = await fetch(`/api/projects/${currentProject}/tasks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title, done: false })
+                });
+                input.value = '';
+                await loadTasks();
+            } catch (err) {
+                console.error("Failed to add task:", err);
+            }
+        }
+
+        function notifyTaskCompleted(taskTitle) {
+            const banner = document.getElementById('task-completed-banner');
+            const titleEl = document.getElementById('task-completed-title');
+            if (banner && titleEl) {
+                titleEl.innerText = `Task completed & ticked off: "${taskTitle}"`;
+                banner.classList.remove('hidden');
+                setTimeout(() => { banner.classList.add('hidden'); }, 4000);
+            }
+            loadTasks();
+        }
+
+        function toggleConversationHistory() {
+            const threadsDiv = document.getElementById(`threads-proj-${currentProject}`);
+            if (threadsDiv) {
+                threadsDiv.classList.toggle('hidden');
+            }
+        }
+
+        function useExamplePrompt(text) {
+            const input = document.getElementById('prompt-input');
+            input.value = text;
+            input.focus();
+        }
+
+        // Providers Presets
         const PRESET_CONFIGS = {
             'openrouter': { name: 'OpenRouter Unified', type: 'openrouter', url: 'https://openrouter.ai/api/v1', model: 'anthropic/claude-3.7-sonnet' },
             'anthropic': { name: 'Anthropic Official', type: 'anthropic', url: 'https://api.anthropic.com/v1', model: 'claude-3-7-sonnet-20250219' },
@@ -825,15 +1343,16 @@
                 const res = await fetch('/api/providers');
                 const list = await res.json();
                 const container = document.getElementById('providers-list');
+                if (!container) return;
                 container.innerHTML = '';
                 
                 list.forEach(p => {
                     const card = document.createElement('div');
-                    card.className = `p-4 rounded-xl border transition space-y-3 ${p.is_active ? 'bg-[#181226] border-[#aa3bff]/60 shadow-lg' : 'bg-[#110e1c] border-[#221b33]'}`;
+                    card.className = `p-3.5 rounded-xl border transition space-y-2.5 ${p.is_active ? 'bg-[#181226] border-purple-600/60 shadow-lg' : 'bg-[#110e1c] border-[#221b33]'}`;
                     
                     const badge = p.is_active 
-                        ? '<span class="text-[10px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ACTIVE</span>'
-                        : '<span class="text-[10px] px-2 py-0.5 rounded bg-[#181426] text-slate-400 border border-[#2b2240] font-mono">STANDBY</span>';
+                        ? '<span class="text-[9px] px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 font-mono font-bold flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> ACTIVE</span>'
+                        : '<span class="text-[9px] px-2 py-0.5 rounded bg-[#181426] text-slate-400 border border-[#2b2240] font-mono">STANDBY</span>';
 
                     card.innerHTML = `
                         <div class="flex items-center justify-between">
@@ -843,14 +1362,14 @@
                             </div>
                             ${badge}
                         </div>
-                        <div class="text-[11px] font-mono text-slate-400 truncate bg-black/40 p-2 rounded border border-[#201a30] space-y-0.5">
+                        <div class="text-[10px] font-mono text-slate-400 truncate bg-black/40 p-1.5 rounded border border-[#201a30] space-y-0.5">
                             <div><span class="text-slate-500">Model:</span> <span class="text-purple-300 font-semibold">${p.default_model}</span></div>
                             <div class="truncate"><span class="text-slate-500">Endpoint:</span> ${p.base_url}</div>
                         </div>
                         <div class="flex items-center justify-between pt-1">
                             ${p.is_active 
                                 ? '<span class="text-[10px] text-emerald-400 font-mono">Connected & Ready</span>' 
-                                : `<button onclick="activateProvider(${p.id})" class="px-3 py-1 rounded bg-[#221a36] hover:bg-[#aa3bff] hover:text-white text-[#c084fc] text-[10px] font-mono transition">Set Active</button>`
+                                : `<button onclick="activateProvider(${p.id})" class="px-2.5 py-1 rounded bg-[#221a36] hover:bg-[#aa3bff] hover:text-white text-[#c084fc] text-[10px] font-mono transition">Set Active</button>`
                             }
                             <button onclick="deleteProvider(${p.id})" class="text-slate-500 hover:text-rose-400 text-xs transition" title="Delete Provider"><i class="fa-solid fa-trash-can"></i></button>
                         </div>
@@ -878,10 +1397,6 @@
                 });
                 document.getElementById('provider-modal').classList.add('hidden');
                 loadProviders();
-                // update header model indicator
-                if (is_active) {
-                    document.getElementById('active-model-indicator').innerText = default_model;
-                }
             } catch (err) {
                 console.error(err);
             }
@@ -905,7 +1420,6 @@
                 console.error(err);
             }
         }
-
 
         function toggleElement(id) {
             const el = document.getElementById(id);
@@ -946,10 +1460,6 @@
             }
         }
 
-        function dismissTaskShelf() {
-            document.getElementById('running-tasks-shelf').classList.add('hidden');
-        }
-
         async function triggerRollback() {
             const messages = document.getElementById('messages');
             const alert = document.createElement('div');
@@ -978,6 +1488,9 @@
             if (!text) return;
             document.getElementById('slash-popup').classList.add('hidden');
 
+            const welcome = document.getElementById('welcome-empty-state');
+            if (welcome) welcome.remove();
+
             if (text === '/optimise' || text === '/optimize') {
                 input.value = '';
                 await optimiseChat();
@@ -987,12 +1500,11 @@
             const messages = document.getElementById('messages');
             const userMsg = document.createElement('div');
             userMsg.className = 'flex justify-end';
-            userMsg.innerHTML = `<div class="bg-[#161224] border border-[#262038] text-slate-200 px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-2xl text-xs leading-relaxed shadow-sm">${escapeHtml(text)}</div>`;
+            userMsg.innerHTML = `<div class="bg-[#181426] border border-[#2b2440] text-purple-100 px-4 py-2.5 rounded-2xl rounded-tr-sm max-w-2xl text-xs leading-relaxed shadow-sm">${escapeHtml(text)}</div>`;
             messages.appendChild(userMsg);
             input.value = '';
             messages.scrollTop = messages.scrollHeight;
 
-            // Add Assistant Loading Placeholder
             const loadingId = 'loading-' + Date.now();
             const loadingDiv = document.createElement('div');
             loadingDiv.id = loadingId;
@@ -1004,11 +1516,11 @@
                 <div class="space-y-1 flex-1">
                     <div class="text-[10px] text-purple-400 font-mono font-medium flex items-center gap-2">
                         <span>${currentSelectedModel}</span>
-                        <span class="text-slate-500 text-[9px]">• Generating...</span>
+                        <span class="text-slate-500 text-[9px]">â€¢ Generating...</span>
                     </div>
                     <div class="bg-[#120f1d] border border-[#231b36] text-slate-300 px-3.5 py-2 rounded-2xl rounded-tl-sm text-xs leading-relaxed inline-flex items-center gap-2 shadow-sm">
-                        <span class="inline-block animate-spin text-purple-400">⚙</span>
-                        <span>Thinking...</span>
+                        <span class="inline-block animate-spin text-purple-400">âš™</span>
+                        <span>Thinking & Executing...</span>
                     </div>
                 </div>
             `;
@@ -1028,11 +1540,13 @@
                 });
                 const data = await res.json();
                 
-                // Remove loading placeholder
                 const placeholder = document.getElementById(loadingId);
                 if (placeholder) placeholder.remove();
 
-                // Render assistant response
+                if (data.completed_task) {
+                    notifyTaskCompleted(data.completed_task.title);
+                }
+
                 const assistantDiv = document.createElement('div');
                 assistantDiv.className = 'flex items-start gap-3 text-xs';
                 
@@ -1063,7 +1577,7 @@
                     <div class="space-y-1 flex-1 max-w-2xl">
                         <div class="text-[10px] text-purple-400/80 font-mono flex items-center gap-2">
                             <span class="font-semibold">${data.model || currentSelectedModel}</span>
-                            <span class="text-slate-500 text-[9px]">• ${elapsed}s</span>
+                            <span class="text-slate-500 text-[9px]">â€¢ ${elapsed}s</span>
                         </div>
                         ${thinkingHtml}
                         <div class="bg-[#120f1d] border border-[#231b36] text-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed whitespace-pre-wrap shadow-sm">
@@ -1094,19 +1608,17 @@
             const label = document.getElementById('optimise-label');
             if (!label) return;
             
-            // Display "Optimising Chat..."
-            label.innerHTML = '<span class="animate-spin inline-block mr-1">⚙</span> Optimising Chat...';
+            label.innerHTML = '<span class="animate-spin inline-block mr-1">âš™</span> Optimising Chat...';
             btn.classList.add('opacity-75', 'pointer-events-none');
 
             try {
                 const res = await fetch('/api/chat/optimise', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ project_id: 1, conversation_id: 1 })
+                    body: JSON.stringify({ project_id: currentProject, conversation_id: currentConversation })
                 });
                 const data = await res.json();
                 
-                // Muted context checkpoint divider in chat feed
                 const messages = document.getElementById('messages');
                 const checkpoint = document.createElement('div');
                 checkpoint.className = 'my-4 py-2 px-3 rounded-xl bg-[#130f20] border border-[#241c36] text-xs text-slate-300 flex items-center justify-between shadow-sm';
@@ -1114,7 +1626,7 @@
                     <div class="flex items-center gap-2">
                         <i class="fa-solid fa-layer-group text-purple-400/80"></i>
                         <span class="font-medium text-slate-200">Chat context optimised</span>
-                        <span class="text-[10px] text-slate-400 hidden sm:inline">• ${data.gotchas_preserved || 4} critical gotchas verified in Active Memory</span>
+                        <span class="text-[10px] text-slate-400 hidden sm:inline">â€¢ ${data.gotchas_preserved || 4} critical gotchas verified in Active Memory</span>
                     </div>
                     <span class="text-[10px] text-purple-300/80 font-mono">Continuing seamlessly</span>
                 `;
@@ -1137,7 +1649,7 @@
             const container = document.getElementById('gotchas-container');
             if (!container) return;
             try {
-                const res = await fetch('/api/gotchas/1');
+                const res = await fetch(`/api/gotchas/${currentProject}`);
                 const list = await res.json();
                 if (!list || list.length === 0) {
                     container.innerHTML = '<div class="text-[10px] text-slate-500 italic p-2">No gotchas recorded yet.</div>';
@@ -1178,25 +1690,21 @@
             }
         }
 
-        function newSession() {
-            const messages = document.getElementById('messages');
-            messages.innerHTML = `
-                <div class="py-2 border-b border-[#1b1726] flex items-center justify-between">
-                    <div>
-                        <h2 class="text-sm font-bold text-white flex items-center gap-2">
-                            <span class="text-[#c084fc]">⚡</span> New Agent Session
-                        </h2>
-                        <p class="text-[11px] text-slate-400">Ready to execute spec-driven tasks.</p>
-                    </div>
-                </div>
-            `;
-        }
-
-        // Global hotkeys (Ctrl+B to toggle inspector, Ctrl+K for command)
+        // Global hotkeys (Ctrl+B to toggle inspector)
         window.addEventListener('keydown', (e) => {
             if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
                 e.preventDefault();
                 toggleInspector();
+            }
+        });
+
+        window.addEventListener('click', (e) => {
+            const projectMenu = document.getElementById('project-menu-popup');
+            const btnAddProj = document.getElementById('btn-add-project');
+            if (projectMenu && !projectMenu.classList.contains('hidden')) {
+                if (!projectMenu.contains(e.target) && !btnAddProj.contains(e.target)) {
+                    projectMenu.classList.add('hidden');
+                }
             }
         });
 
@@ -1211,17 +1719,17 @@
                 
                 let html = '';
                 if (data.local && data.local.length > 0) {
-                    html += '<optgroup label="⚡ Local Offline (Zero Cost)">';
+                    html += '<optgroup label="âš¡ Local Offline (Zero Cost)">';
                     for (const m of data.local) {
                         const isSelected = m === data.active ? 'selected' : '';
-                        const tag = m.includes('ornith') ? '💡 Reasoning' : (m.includes('gemma') || m.includes('qwen') ? '⚡ Fast' : '⚙ Local');
+                        const tag = m.includes('ornith') ? 'ðŸ’¡ Reasoning' : (m.includes('gemma') || m.includes('qwen') ? 'âš¡ Fast' : 'âš™ Local');
                         html += `<option value="${m}" ${isSelected}>${m} (${tag})</option>`;
                     }
                     html += '</optgroup>';
                 }
                 
                 if (data.cloud && data.cloud.length > 0) {
-                    html += '<optgroup label="🌐 Cloud Frontier">';
+                    html += '<optgroup label="ðŸŒ Cloud Frontier">';
                     for (const m of data.cloud) {
                         const isSelected = m === data.active ? 'selected' : '';
                         html += `<option value="${m}" ${isSelected}>${m}</option>`;
@@ -1251,10 +1759,14 @@
 
         // Initialize state
         document.addEventListener('DOMContentLoaded', () => {
+            loadProjects();
+            loadTasks();
             loadModels();
             loadGotchas();
             loadProviders();
         });
+        loadProjects();
+        loadTasks();
         loadModels();
         loadGotchas();
         loadProviders();
