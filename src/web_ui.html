@@ -1625,23 +1625,49 @@
                 }
 
                 const elapsed = Math.round((data.duration_ms || 0) / 100) / 10;
+                const isError = data.status && data.status !== 'ok';
+
+                let replyHtml;
+                if (isError) {
+                    // Determine specific tip based on error message
+                    let tip = '';
+                    const msg = data.reply || '';
+                    if (msg.includes('agent') && msg.includes('harness')) {
+                        tip = `<div class="mt-2 text-[10px] text-amber-400/80 font-mono flex items-center gap-1.5"><i class="fa-solid fa-triangle-exclamation text-[9px]"></i> This free model is restricted to registered apps. Switch to Gemini Flash or Llama 3.3 free instead.</div>`;
+                    } else if (msg.includes('no_key') || msg.includes('No API key')) {
+                        tip = `<div class="mt-2 text-[10px] text-purple-300/80 font-mono flex items-center gap-1.5"><i class="fa-solid fa-gear text-[9px]"></i> Open ⚙ Settings → Providers and add your OpenRouter key.</div>`;
+                    } else if (msg.includes('Provider returned error') || msg.includes('upstream')) {
+                        tip = `<div class="mt-2 text-[10px] text-slate-400 font-mono">Upstream provider error — try a different model or retry.</div>`;
+                    }
+                    replyHtml = `
+                        <div class="bg-red-950/20 border border-red-800/50 text-red-300 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed whitespace-pre-wrap shadow-sm space-y-1">
+                            <div class="flex items-center gap-2 text-red-400 font-mono text-[10px] font-semibold mb-1">
+                                <i class="fa-solid fa-circle-exclamation text-[11px]"></i>
+                                ${data.status === 'no_api_key' ? 'No API Key' : data.status === 'connection_error' ? 'Connection Error' : 'Provider Error'}
+                            </div>
+                            <div class="text-red-200/80">${escapeHtml(msg)}</div>
+                            ${tip}
+                        </div>`;
+                } else {
+                    replyHtml = `<div class="bg-[#120f1d] border border-[#231b36] text-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed whitespace-pre-wrap shadow-sm">${escapeHtml(data.reply)}</div>`;
+                }
+
                 assistantDiv.innerHTML = `
-                    <div class="w-6 h-6 rounded-md bg-purple-950/60 border border-purple-800/40 flex items-center justify-center text-purple-300 flex-shrink-0">
-                        <i class="fa-solid fa-bolt text-[11px]"></i>
+                    <div class="w-6 h-6 rounded-md ${isError ? 'bg-red-950/60 border-red-800/40' : 'bg-purple-950/60 border-purple-800/40'} border flex items-center justify-center ${isError ? 'text-red-300' : 'text-purple-300'} flex-shrink-0">
+                        <i class="fa-solid ${isError ? 'fa-circle-exclamation' : 'fa-bolt'} text-[11px]"></i>
                     </div>
                     <div class="space-y-1 flex-1 max-w-2xl">
-                        <div class="text-[10px] text-purple-400/80 font-mono flex items-center gap-2">
+                        <div class="text-[10px] ${isError ? 'text-red-400/80' : 'text-purple-400/80'} font-mono flex items-center gap-2">
                             <span class="font-semibold">${data.model || currentSelectedModel}</span>
-                            <span class="text-slate-500 text-[9px]">â€¢ ${elapsed}s</span>
+                            <span class="text-slate-500 text-[9px]">• ${elapsed}s</span>
                         </div>
                         ${thinkingHtml}
-                        <div class="bg-[#120f1d] border border-[#231b36] text-slate-200 px-4 py-3 rounded-2xl rounded-tl-sm text-xs leading-relaxed whitespace-pre-wrap shadow-sm">
-                            ${escapeHtml(data.reply)}
-                        </div>
+                        ${replyHtml}
                     </div>
                 `;
                 messages.appendChild(assistantDiv);
                 messages.scrollTop = messages.scrollHeight;
+
             } catch (err) {
                 console.error(err);
                 const placeholder = document.getElementById(loadingId);
