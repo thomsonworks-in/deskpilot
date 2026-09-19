@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -111,16 +111,29 @@
                 <span class="w-1.5 h-1.5 rounded-full bg-emerald-500/80 animate-pulse"></span>
                 <span class="text-slate-300">:31415</span>
             </div>
-            
+
+            <!-- OR Credit balance pill (hidden until key is set) -->
+            <div id="credits-pill" class="hidden items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#0f1620] border border-slate-700/60 font-mono text-[10px] text-slate-400 cursor-pointer hover:border-blue-700/60 transition" onclick="openSettingsModal('providers')" title="OpenRouter credits remaining">
+                <i class="fa-solid fa-coins text-[9px] text-amber-400/80"></i>
+                <span id="credits-text">—</span>
+            </div>
+
+            <!-- Free-only toggle (shown when OR key present) -->
+            <label id="free-filter-wrap" class="hidden items-center gap-1 cursor-pointer select-none" title="Show only free cloud models">
+                <input type="checkbox" id="free-filter-toggle" onchange="applyFreeFilter()" class="accent-emerald-500 w-3 h-3 rounded cursor-pointer">
+                <span class="text-[10px] text-emerald-400/80 font-mono">Free</span>
+            </label>
+
+            <!-- Model selector -->
             <div class="flex items-center space-x-1.5 bg-[#141120] border border-[#262138] hover:border-purple-600/60 rounded-md px-2 py-0.5 text-xs text-purple-300 font-mono transition">
                 <i class="fa-solid fa-brain text-[10px] text-purple-400/80"></i>
                 <select id="model-select" onchange="onModelChange(this.value)" class="bg-transparent border-none focus:outline-none text-[11px] text-purple-200 cursor-pointer pr-1 font-sans">
-                    <option value="" disabled selected>Detecting local models...</option>
+                    <option value="" disabled selected>Detecting models...</option>
                 </select>
             </div>
 
             <!-- Settings Button -->
-            <button onclick="openSettingsModal()" class="p-1.5 rounded-md hover:bg-[#1a1626] text-slate-400 hover:text-white transition" title="Open Settings (Providers, Triggers, MCP, Vault)">
+            <button onclick="openSettingsModal('providers')" class="p-1.5 rounded-md hover:bg-[#1a1626] text-slate-400 hover:text-white transition" title="Providers & API Keys">
                 <i class="fa-solid fa-gear text-xs"></i>
             </button>
 
@@ -517,9 +530,50 @@
                             <button onclick="openProviderModal()" class="btn-brand text-xs px-3 py-1.5 rounded-lg">+ Add Provider</button>
                         </div>
 
+                        <!-- OpenRouter Quick Config Card -->
+                        <div class="p-4 rounded-xl bg-[#0e0b1a] border border-[#2a1f3d] space-y-3">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <i class="fa-solid fa-bolt text-purple-400 text-xs"></i>
+                                    <span class="text-xs font-bold text-white">OpenRouter</span>
+                                    <span class="text-[9px] px-1.5 py-0.5 rounded bg-purple-950/60 text-purple-300 border border-purple-800/40 font-mono">400+ models</span>
+                                </div>
+                                <div id="or-balance-display" class="text-[10px] font-mono text-slate-400 hidden">
+                                    <span class="text-emerald-400" id="or-balance-val">—</span>
+                                </div>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex gap-2 items-center">
+                                    <div class="relative flex-1">
+                                        <input type="password" id="setting-or-key"
+                                            class="w-full bg-[#130f20] border border-[#2b2240] rounded-lg px-3 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-purple-600/60 placeholder-slate-600"
+                                            placeholder="sk-or-v1-..." autocomplete="off" />
+                                        <button onclick="toggleOrKeyVisibility()" class="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-[10px]" title="Show/hide key">
+                                            <i id="or-key-eye" class="fa-solid fa-eye-slash"></i>
+                                        </button>
+                                    </div>
+                                    <button onclick="saveOrKey()" class="btn-brand text-[11px] px-3 py-1.5 rounded-lg whitespace-nowrap flex items-center gap-1.5">
+                                        <i class="fa-solid fa-floppy-disk text-[10px]"></i> Save & Refresh
+                                    </button>
+                                </div>
+                                <div class="flex items-center gap-3 text-[10px] text-slate-400">
+                                    <label class="flex items-center gap-1.5 cursor-pointer">
+                                        <input type="checkbox" id="or-free-only-setting" class="accent-emerald-500 w-3 h-3 rounded">
+                                        <span>Show free models only</span>
+                                    </label>
+                                    <span id="save-status" class="hidden text-emerald-400 font-mono flex items-center gap-1">
+                                        <i class="fa-solid fa-check text-[9px]"></i> Saved
+                                    </span>
+                                </div>
+                                <p class="text-[10px] text-slate-500 leading-relaxed">
+                                    Get a free key at <span class="text-purple-300 font-mono">openrouter.ai</span> — free-tier models (🆓) cost $0. Key stored locally in SQLite.
+                                </p>
+                            </div>
+                        </div>
+
                         <!-- 1-Click Quick Presets -->
                         <div class="space-y-2">
-                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">1-Click Presets</span>
+                            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">1-Click Custom Provider Presets</span>
                             <div class="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                                 <div onclick="selectPreset('openrouter')" class="p-2.5 rounded-xl bg-[#120f1e] border border-[#231b33] hover:border-purple-600/60 cursor-pointer transition">
                                     <div class="flex items-center space-x-1.5 text-purple-400 font-bold text-xs">
@@ -550,6 +604,7 @@
                             </div>
                         </div>
                     </div>
+
 
                     <!-- TAB 2: TRIGGERS & AUTOMATION -->
                     <div id="stab-triggers" class="hidden space-y-5">
@@ -1673,9 +1728,9 @@
         }
 
         async function saveSettings() {
-            const or_key = document.getElementById('setting-or-key').value;
-            const or_model = document.getElementById('setting-or-model').value;
-            const provider = document.getElementById('setting-provider').value;
+            const or_key = document.getElementById('setting-or-key')?.value || '';
+            const or_model = document.getElementById('setting-or-model')?.value || '';
+            const provider = document.getElementById('setting-provider')?.value || '';
             try {
                 await fetch('/api/settings', {
                     method: 'POST',
@@ -1683,11 +1738,75 @@
                     body: JSON.stringify({ openrouter_key: or_key, openrouter_model: or_model, active_provider: provider })
                 });
                 const status = document.getElementById('save-status');
-                status.classList.remove('hidden');
-                setTimeout(() => status.classList.add('hidden'), 2500);
-            } catch (err) {
-                console.error(err);
+                if (status) { status.classList.remove('hidden'); setTimeout(() => status.classList.add('hidden'), 2500); }
+                await loadModels();
+            } catch (err) { console.error(err); }
+        }
+
+        async function saveOrKey() {
+            const keyEl = document.getElementById('setting-or-key');
+            if (!keyEl) return;
+            const key = keyEl.value.trim();
+            try {
+                await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ openrouter_key: key })
+                });
+                const status = document.getElementById('save-status');
+                if (status) { status.classList.remove('hidden'); setTimeout(() => status.classList.add('hidden'), 2500); }
+                const headerToggle = document.getElementById('free-filter-toggle');
+                const freeOnlyEl = document.getElementById('or-free-only-setting');
+                if (headerToggle && freeOnlyEl) headerToggle.checked = freeOnlyEl.checked;
+                await loadModels();
+                const balDisplay = document.getElementById('or-balance-display');
+                const balVal = document.getElementById('or-balance-val');
+                if (balDisplay && balVal && key) {
+                    balDisplay.classList.remove('hidden');
+                    const credits = await fetch('/api/credits').then(r => r.json()).catch(() => null);
+                    if (credits && !credits.error) {
+                        balVal.textContent = (credits.is_free_tier || credits.limit === null)
+                            ? 'Free tier active'
+                            : `$${(credits.limit_remaining ?? 0).toFixed(2)} of $${credits.limit?.toFixed(2)} remaining`;
+                    }
+                }
+            } catch (err) { console.error(err); }
+        }
+
+        function toggleOrKeyVisibility() {
+            const input = document.getElementById('setting-or-key');
+            const icon = document.getElementById('or-key-eye');
+            if (!input) return;
+            if (input.type === 'password') {
+                input.type = 'text';
+                if (icon) { icon.classList.remove('fa-eye-slash'); icon.classList.add('fa-eye'); }
+            } else {
+                input.type = 'password';
+                if (icon) { icon.classList.remove('fa-eye'); icon.classList.add('fa-eye-slash'); }
             }
+        }
+
+        async function openSettingsModal(tab) {
+            const modal = document.getElementById('settings-modal');
+            if (!modal) return;
+            modal.classList.remove('hidden');
+            switchSettingsTab(tab || 'providers');
+            try {
+                const settings = await fetch('/api/settings').then(r => r.json());
+                const keyEl = document.getElementById('setting-or-key');
+                if (keyEl && settings.openrouter_key) keyEl.value = settings.openrouter_key;
+                if (settings.openrouter_key) {
+                    const balDisplay = document.getElementById('or-balance-display');
+                    const balVal = document.getElementById('or-balance-val');
+                    if (balDisplay) balDisplay.classList.remove('hidden');
+                    const credits = await fetch('/api/credits').then(r => r.json()).catch(() => null);
+                    if (credits && !credits.error && balVal) {
+                        balVal.textContent = (credits.is_free_tier || credits.limit === null)
+                            ? 'Free tier active'
+                            : `$${(credits.limit_remaining ?? 0).toFixed(2)} of $${credits.limit?.toFixed(2)} remaining`;
+                    }
+                }
+            } catch (err) { console.error(err); }
         }
 
         // Global hotkeys (Ctrl+B to toggle inspector)
@@ -1709,6 +1828,7 @@
         });
 
         let currentSelectedModel = 'ornith:9b';
+        let allModelsData = { local: [], cloud: [], active: '', has_openrouter_key: false };
 
         async function loadModels() {
             const sel = document.getElementById('model-select');
@@ -1716,31 +1836,112 @@
             try {
                 const res = await fetch('/api/models');
                 const data = await res.json();
-                
-                let html = '';
-                if (data.local && data.local.length > 0) {
-                    html += '<optgroup label="âš¡ Local Offline (Zero Cost)">';
-                    for (const m of data.local) {
-                        const isSelected = m === data.active ? 'selected' : '';
-                        const tag = m.includes('ornith') ? 'ðŸ’¡ Reasoning' : (m.includes('gemma') || m.includes('qwen') ? 'âš¡ Fast' : 'âš™ Local');
-                        html += `<option value="${m}" ${isSelected}>${m} (${tag})</option>`;
-                    }
-                    html += '</optgroup>';
+                allModelsData = data;
+                renderModelDropdown(data, document.getElementById('free-filter-toggle')?.checked || false);
+
+                // Show/hide the free-filter toggle and credits pill based on OR key
+                const freeWrap = document.getElementById('free-filter-wrap');
+                const creditsPill = document.getElementById('credits-pill');
+                if (data.has_openrouter_key) {
+                    if (freeWrap) { freeWrap.classList.remove('hidden'); freeWrap.classList.add('flex'); }
+                    if (creditsPill) { creditsPill.classList.remove('hidden'); creditsPill.classList.add('flex'); }
+                    loadCredits();
+                } else {
+                    if (freeWrap) freeWrap.classList.add('hidden');
+                    if (creditsPill) creditsPill.classList.add('hidden');
                 }
-                
-                if (data.cloud && data.cloud.length > 0) {
-                    html += '<optgroup label="ðŸŒ Cloud Frontier">';
-                    for (const m of data.cloud) {
-                        const isSelected = m === data.active ? 'selected' : '';
-                        html += `<option value="${m}" ${isSelected}>${m}</option>`;
-                    }
-                    html += '</optgroup>';
-                }
-                
-                sel.innerHTML = html;
-                currentSelectedModel = data.active || (data.local && data.local[0]) || 'ornith:9b';
+
+                currentSelectedModel = data.active || (data.local && data.local[0]?.id) || 'ornith:9b';
             } catch (err) {
-                console.error("Failed to load models:", err);
+                console.error('Failed to load models:', err);
+            }
+        }
+
+        function renderModelDropdown(data, freeOnly) {
+            const sel = document.getElementById('model-select');
+            if (!sel) return;
+            let html = '';
+
+            // Local Ollama group
+            if (data.local && data.local.length > 0) {
+                html += '<optgroup label="⚡ Local Offline — Zero Cost">';
+                for (const m of data.local) {
+                    const isSelected = m.id === data.active ? 'selected' : '';
+                    const ctx = m.context_length >= 1000000 ? `${(m.context_length/1000000).toFixed(1)}M ctx`
+                                : m.context_length >= 1000 ? `${Math.round(m.context_length/1000)}k ctx` : `${m.context_length} ctx`;
+                    const tag = m.id.includes('ornith') || m.id.includes('r1') || m.id.includes('deepseek') ? '💡' :
+                                m.id.includes('gemma') || m.id.includes('qwen') ? '⚡' : '🖥';
+                    html += `<option value="${m.id}" ${isSelected}>${tag} ${m.id} · ${ctx}</option>`;
+                }
+                html += '</optgroup>';
+            }
+
+            // Cloud free group
+            const freeModels = (data.cloud || []).filter(m => m.is_free);
+            if (freeModels.length > 0) {
+                html += '<optgroup label="🆓 OpenRouter — Free Tier">';
+                for (const m of freeModels) {
+                    const isSelected = m.id === data.active ? 'selected' : '';
+                    const ctx = m.context_length >= 1000000 ? `${(m.context_length/1000000).toFixed(0)}M ctx`
+                                : `${Math.round(m.context_length/1000)}k ctx`;
+                    html += `<option value="${m.id}" ${isSelected}>🆓 ${m.name} · ${ctx}</option>`;
+                }
+                html += '</optgroup>';
+            }
+
+            // Cloud paid group (hidden when freeOnly)
+            if (!freeOnly) {
+                const paidModels = (data.cloud || []).filter(m => !m.is_free);
+                if (paidModels.length > 0) {
+                    html += '<optgroup label="🌐 OpenRouter — Frontier">';
+                    for (const m of paidModels) {
+                        const isSelected = m.id === data.active ? 'selected' : '';
+                        const ctx = m.context_length >= 1000000 ? `${(m.context_length/1000000).toFixed(0)}M ctx`
+                                    : `${Math.round(m.context_length/1000)}k ctx`;
+                        const provBadge = m.provider !== 'openrouter' ? ` [${m.provider}]` : '';
+                        html += `<option value="${m.id}" ${isSelected}>🌐 ${m.name}${provBadge} · ${ctx}</option>`;
+                    }
+                    html += '</optgroup>';
+                }
+            }
+
+            sel.innerHTML = html;
+        }
+
+        function applyFreeFilter() {
+            const freeOnly = document.getElementById('free-filter-toggle')?.checked || false;
+            renderModelDropdown(allModelsData, freeOnly);
+        }
+
+        async function loadCredits() {
+            try {
+                const res = await fetch('/api/credits');
+                const data = await res.json();
+                const textEl = document.getElementById('credits-text');
+                const pill = document.getElementById('credits-pill');
+                if (!textEl || !pill) return;
+
+                if (data.error === 'no_key') {
+                    pill.classList.add('hidden');
+                    return;
+                }
+                if (data.error) {
+                    textEl.textContent = 'OR: offline';
+                    return;
+                }
+                if (data.is_free_tier || data.limit === null || data.limit === undefined) {
+                    textEl.textContent = 'OR: Free tier';
+                    pill.title = `Rate limit: ${data.rate_limit_requests} req/${data.rate_limit_interval}`;
+                } else {
+                    const rem = (data.limit_remaining ?? 0).toFixed(2);
+                    const pct = data.limit > 0 ? Math.round((data.limit_remaining / data.limit) * 100) : 0;
+                    textEl.textContent = `$${rem} left`;
+                    pill.title = `OpenRouter: $${rem} of $${data.limit?.toFixed(2)} remaining (${pct}%)`;
+                    // tint low balance
+                    if (pct < 20) pill.classList.add('border-amber-700/60');
+                }
+            } catch (err) {
+                console.error('Failed to load credits:', err);
             }
         }
 
@@ -1772,4 +1973,4 @@
         loadProviders();
     </script>
 </body>
-</html>
+</html>
